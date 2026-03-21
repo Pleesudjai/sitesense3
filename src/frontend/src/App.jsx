@@ -95,16 +95,6 @@ export default function App() {
               🔍
             </button>
           </div>
-          {/* Preferences */}
-          <select
-            className="bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm"
-            value={prefs.buildingType}
-            onChange={e => setPrefs(p => ({ ...p, buildingType: e.target.value }))}
-          >
-            <option value="single_family">Single Family</option>
-            <option value="multifamily">Multi-Family</option>
-            <option value="commercial">Commercial</option>
-          </select>
           <button
             onClick={handleAnalyze}
             disabled={!polygon || loading}
