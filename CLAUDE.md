@@ -5,22 +5,21 @@
 ## Project Overview
 **Event:** HackASU 2025
 **Team:** Mobasher Group
-**Domain:** Civil/Structural Engineering AI tools for Arizona infrastructure
+**Track:** Track 3 — Economic Empowerment & Education
 **Date:** March 20–21, 2025
+**Live URL:** https://ornate-marigold-192751.netlify.app
+**GitHub:** https://github.com/Pleesudjai/sitesense
 
 ## Selected Project — SiteSense: AI-Powered Land Feasibility Tool
-**Track 3: Economic Empowerment & Education (HackASU 2025)**
-**Framing: Democratizing access to civil engineering feasibility studies for affordable housing**
-
 **One-Line Pitch:** "Drop a pin, draw your lot — get a code-compliant feasibility study in 30 seconds.
 What used to cost $50,000 and 3 weeks now takes half a minute."
 
 ### What It Does
 User draws a polygon on a satellite map → app auto-pulls:
 - DEM elevation grid (USGS 3DEP) for the polygon + 100m buffer
-- GIS risk layers: flood zone (FEMA), seismic (USGS), soil (USDA), wetlands (USFWS), fire (USGS)
-- Runs civil engineering calculations: slope, cut/fill volumes, foundation type, structural loads, stormwater
-- Generates ROM cost estimate + 10-year projection (4.5% ENR CCI inflation)
+- GIS risk layers: flood zone (FEMA), seismic (USGS), soil (USDA), wetlands (USFWS), fire (rule-based)
+- Civil engineering calculations: slope, cut/fill volumes, foundation type, structural loads, stormwater
+- ROM cost estimate + 10-year projection (4.5% ENR CCI inflation)
 - Claude API translates output into plain English → PDF report
 
 ### Engineering Code Basis
@@ -38,114 +37,107 @@ User draws a polygon on a satellite map → app auto-pulls:
 - Heat flag: "Optimal build window Oct–Apr, summer adds 25% labor"
 - Regional cost multipliers: Phoenix 0.95×, Tucson 0.88×, Flagstaff 1.05×
 
-### API Keys Needed
+## Current Architecture (AS-BUILT)
+
+### Stack — FINAL
+- **Frontend:** React 18 + Vite 5 + Tailwind CSS 3
+- **Map:** MapLibre GL JS 4 (NO TOKEN NEEDED) + Esri World Imagery satellite (free)
+- **Address Search:** Nominatim/OpenStreetMap geocoder (free, no key)
+- **Draw Tool:** @mapbox/mapbox-gl-draw (aliased to maplibre-gl via vite.config.js)
+- **Charts:** Recharts — elevation profiles, cut/fill bar chart
+- **Backend:** Netlify Functions (Python Lambda) — NO separate server needed
+- **AI Layer:** Claude API (claude-sonnet-4-6) — plain-English report generation
+- **PDF:** ReportLab — in-memory PDF as base64 bytes
+- **Deploy:** Netlify only — frontend + backend functions in one repo
+
+### API Keys Required (set in Netlify environment variables)
 ```
-MAPBOX_TOKEN=        # Mapbox GL JS + Geocoding (free tier)
-ANTHROPIC_API_KEY=   # Claude Sonnet 4.6
+ANTHROPIC_API_KEY=   # Claude Sonnet 4.6 — set in Netlify dashboard
 ```
-All GIS APIs (USGS, FEMA, USDA, USFWS, seismic) are FREE — no auth required.
+**No Mapbox token needed.** All GIS APIs are FREE with no auth.
 
-### 3 Pre-Cached Demo Addresses
-1. Phoenix AZ flat lot (Flood Zone X) — expansive soil, low risk baseline
-2. Houston TX (Flood Zone AE) — pile foundation required
-3. Flagstaff AZ hillside — steep slope, 40psf snow, high cut/fill
+### Free APIs Used (no keys required)
+| API | Endpoint | Data |
+|---|---|---|
+| USGS 3DEP | epqs.nationalmap.gov/v1/json | Elevation grid |
+| FEMA NFHL | msc.fema.gov/arcgis/rest | Flood zone (AE/X/VE) |
+| USDA SoilWeb | casoilresource.lawr.ucdavis.edu/api | Soil, caliche, shrink-swell |
+| USGS NSHM | earthquake.usgs.gov/hazard/designmaps | Seismic SDC, Ss, S1 |
+| USFWS NWI | fws.gov/wetlands/arcgis/rest | Wetlands |
+| Esri World Imagery | arcgisonline.com | Satellite tiles |
+| Nominatim OSM | nominatim.openstreetmap.org | Address geocoding |
 
-## Architecture Conventions
-
-### Stack
-- **Frontend:** React + Vite + Tailwind CSS — fast scaffold, great for maps
-- **Map:** Mapbox GL JS + `@mapbox/mapbox-gl-draw` — satellite view + polygon drawing
-- **Charts:** Recharts — elevation profiles and cross-sections
-- **Backend:** Python FastAPI — async, lightweight, you know Python well
-- **AI Layer:** Claude API (claude-sonnet-4-6) — translation layer only, not the engineer
-- **PDF:** ReportLab — server-side PDF generation
-- **Geometry:** Shapely + NumPy — polygon buffering, grid calculations
-- **Deploy:** Vercel (frontend) + Render (backend) — free tier, fast
-
-### File Organization
+### File Organization (AS-BUILT)
 ```
 Hackathon ASU 2025/
-├── CLAUDE.md                    ← You are here (global rules, always loaded)
-├── .claude/
-│   ├── rules/                   ← Domain rules (load only when working in that area)
-│   ├── docs/                    ← Heavy reference (sub-agent scouts only)
-│   └── commands/                ← Slash commands
-├── specs/                       ← Feature specs
-├── docs/                        ← Decisions, handoffs, project brief
-└── src/
-    ├── frontend/                ← React + Vite + Tailwind + Mapbox
-    │   └── src/components/
-    │       ├── MapView.jsx      # Satellite map + polygon draw
-    │       ├── RiskCards.jsx    # Traffic-light risk indicators
-    │       ├── ElevationChart.jsx
-    │       ├── CutFillVisual.jsx
-    │       ├── CostTable.jsx    # Now / 5yr / 10yr projection
-    │       └── ReportButton.jsx
-    └── backend/                 ← Python FastAPI
-        ├── main.py              # /analyze + /report endpoints
-        ├── data/                # GIS API connectors
-        ├── engineering/         # ACI/ASCE rule engine
-        ├── ai/                  # Claude API layer
-        └── report/              # ReportLab PDF
+├── CLAUDE.md                        ← You are here
+├── TODO.md                          ← Outstanding tasks
+├── netlify.toml                     ← Build + functions config
+├── netlify/functions/
+│   ├── analyze.py                   ← POST /api/analyze (Lambda)
+│   ├── report.py                    ← POST /api/report → PDF bytes (Lambda)
+│   └── requirements.txt             ← Python deps for Lambda
+├── src/
+│   ├── frontend/
+│   │   ├── vite.config.js           ← alias mapbox-gl → maplibre-gl
+│   │   ├── package.json
+│   │   └── src/
+│   │       ├── main.jsx             ← CSS imports: maplibre-gl + draw
+│   │       ├── App.jsx              ← Header, map, dashboard layout
+│   │       ├── api.js               ← analyzeParcel() + downloadReport()
+│   │       └── components/
+│   │           ├── MapView.jsx      ← MapLibre + Esri sat + Nominatim search
+│   │           ├── RiskCards.jsx    ← 6 traffic-light risk indicators
+│   │           ├── ElevationChart.jsx
+│   │           ├── CutFillVisual.jsx
+│   │           ├── CostTable.jsx    ← Now/2yr/5yr/10yr projection
+│   │           └── ReportButton.jsx
+│   └── backend/
+│       ├── main.py                  ← FastAPI app (local dev only)
+│       ├── data/                    ← elevation, flood, soil, seismic, fire, wetlands
+│       ├── engineering/             ← cut_fill, rules, cost, loads, stormwater
+│       ├── ai/translate.py          ← Claude prompt → 6-section report
+│       └── report/pdf_report.py     ← generate_pdf() + generate_pdf_bytes()
+└── docs/decisions.md
 ```
 
+## How Netlify Functions Work (important for new sessions)
+- `netlify/functions/analyze.py` and `report.py` are Python Lambdas
+- They add `src/backend/` to `sys.path` and import all modules from there
+- `netlify.toml` has `included_files = ["src/backend/**"]` to bundle backend
+- Redirects: `/api/analyze` → `/.netlify/functions/analyze`
+- Timeout: 26 seconds (set in netlify.toml)
+- The `vite.config.js` alias (`mapbox-gl` → `maplibre-gl`) is CRITICAL — don't remove it
+
 ## Coding Standards
-
 ### General
-- Write readable, demo-ready code — clarity beats cleverness at a hackathon
-- Every function must have a one-line comment explaining its purpose
-- Use consistent naming: `snake_case` for Python, `camelCase` for JS
-- No dead code. No TODO comments in final demo code.
-- Keep files under 300 lines — split if larger
+- Readable demo-ready code — clarity beats cleverness at a hackathon
+- `snake_case` Python, `camelCase` JS
+- No dead code, no TODO comments in production files
 
-### Python Backend
-- Use FastAPI for any REST endpoints
-- Use `httpx` for external API calls (async-friendly)
-- Store config (API keys, etc.) in `.env` — never hardcode
-- Return structured JSON responses: `{"status": "ok", "data": {...}, "message": "..."}`
+### Python Backend (Netlify Functions)
+- All async functions — use `asyncio.run()` in the Lambda handler
+- `httpx` for external API calls (async-friendly)
+- Never hardcode API keys — read from `os.environ`
+- Return: `{"status": "ok", "data": {...}}`
 
 ### Frontend
-- Mobile-responsive layouts using CSS Grid or Flexbox
-- Use clean, professional design — judges will see this
-- Map components: use Leaflet.js for any GIS/map features
-- Minimal dependencies — avoid heavy frameworks unless necessary
+- Tailwind for styling, no inline style dumps
+- Keep components under 150 lines
+- All map operations go through `MapView.jsx` only
 
-### AI Layer (Claude API)
-- Always use structured prompts with clear role + task + output format
-- Return machine-parseable JSON from Claude when feeding other systems
-- Log all Claude API calls to `docs/decisions.md` with timestamp + token count
-- Never put raw user input directly into prompts — sanitize first
-
-## Testing Strategy
-- Manual test each feature before demo — no automated tests needed for hackathon MVP
-- Test with real Arizona data: use AZGS, ADOT, Maricopa County public datasets
-- Test edge cases: missing data, extreme values, error states
-
-## Context Management (WISC Rules)
-
-### Write
-- After every major feature: run `/commit` to log decisions
-- When context gets long (>50 messages): run `/handoff` to create summary
-- All architectural decisions go in `docs/decisions.md`
-
-### Isolate
-- Use sub-agents for research (web search, reading long docs)
-- Sub-agents return concise summaries — never dump raw content into main context
-- Never use sub-agents for implementation — only research and planning
-
-### Select
-- Load `.claude/rules/frontend.md` only when building UI
-- Load `.claude/rules/backend.md` only when building API
-- Load `.claude/rules/ai-layer.md` only when working on Claude integration
-- Load `.claude/docs/` files only via sub-agent scouts
-
-### Compress
-- Use `/compact` or `/handoff` when conversation exceeds ~100 messages
-- Fresh sessions get only: CLAUDE.md + relevant spec file
+## 3 Demo Test Cases (Pre-cache for hackathon)
+1. **Phoenix flat lot** — `1900 E Apache Blvd, Tempe AZ` → Flood X, expansive soil, low risk
+2. **Houston flood zone** — `5000 Main St, Houston TX 77002` → Flood AE, pile foundation
+3. **Flagstaff hillside** — `2800 N Fort Valley Rd, Flagstaff AZ` → Steep slope, snow load, high cut/fill
 
 ## Demo Checklist
-- [ ] Working web interface (no broken UI)
-- [ ] At least one real Arizona dataset integrated
-- [ ] Claude AI generating a meaningful output (report, recommendation, etc.)
-- [ ] Clear value proposition explained in 30 seconds
-- [ ] Error states handled gracefully (no crashes during demo)
+- [x] Satellite map loads (MapLibre + Esri, no token)
+- [x] Address search works (Nominatim)
+- [x] Polygon draw tool works
+- [x] Netlify Functions deployed (analyze + report)
+- [ ] ANTHROPIC_API_KEY set in Netlify environment variables
+- [ ] End-to-end test: draw polygon → click Analyze → results appear
+- [ ] PDF download works
+- [ ] Test all 3 demo addresses
+- [ ] Error states handled gracefully (no crashes)
