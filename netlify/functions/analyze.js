@@ -226,9 +226,37 @@ function defaultFlood() {
 //    hydrologic soil group, drainage class, shrink-swell, flooding frequency,
 //    depth to water table, corrosion risk, building site limitations
 
-const SHRINK_SWELL = { C: 'High', CL: 'High', SiC: 'High', SiCL: 'Moderate', SC: 'Moderate', SCL: 'Low', SiL: 'Low', L: 'Low', SL: 'Low', LS: 'Low', S: 'Low' }
-const TEXTURE_DESC = { C: 'Clay (high plasticity)', CL: 'Clay Loam (expansive)', SiC: 'Silty Clay', SiCL: 'Silty Clay Loam', L: 'Loam (well-balanced)', SiL: 'Silt Loam', SL: 'Sandy Loam', S: 'Sand', LS: 'Loamy Sand', SC: 'Sandy Clay', SCL: 'Sandy Clay Loam' }
+const SHRINK_SWELL = { C: 'High', CL: 'High', SiC: 'High', SiCL: 'Moderate', SC: 'Moderate', SCL: 'Low', SiL: 'Low', Si: 'Low', L: 'Low', SL: 'Low', LS: 'Low', S: 'Low', GR: 'Low', CB: 'Low', ST: 'Low', BY: 'Low', MK: 'Low', PT: 'Low' }
+const TEXTURE_DESC = {
+  C: 'Clay (high plasticity, PI>30)', CL: 'Clay Loam (expansive, PI 15-30)', SiC: 'Silty Clay (high plasticity)', SiCL: 'Silty Clay Loam (moderate plasticity)',
+  SC: 'Sandy Clay (moderate shrink-swell)', SCL: 'Sandy Clay Loam', SiL: 'Silt Loam (frost-susceptible)', Si: 'Silt (highly frost-susceptible, liquefiable)',
+  L: 'Loam (well-balanced)', SL: 'Sandy Loam', S: 'Sand (drains fast, low bearing)', LS: 'Loamy Sand',
+  GR: 'Gravel (high bearing, free-draining)', CB: 'Cobbles', ST: 'Stones', BY: 'Boulders',
+  MK: 'Muck (organic, compressible — not suitable for foundations)', PT: 'Peat (highly compressible — deep foundations required)',
+}
 const HSG_DESC = { A: 'Low runoff potential — sandy, well-drained', B: 'Moderate runoff — loamy, moderate infiltration', C: 'Moderately high runoff — slow infiltration', D: 'High runoff — clay, very slow infiltration' }
+
+// USCS classification estimate from USDA texture (for foundation design per IBC 2021 Table 1806.2)
+const USCS_ESTIMATE = {
+  S: 'SP/SW', LS: 'SM', SL: 'SM/SC', L: 'CL/ML', SiL: 'ML', Si: 'ML',
+  SCL: 'SC', CL: 'CL', SiCL: 'CL/CH', SC: 'SC', SiC: 'CH', C: 'CH',
+  GR: 'GP/GW', CB: 'GP', MK: 'OH/OL', PT: 'PT',
+}
+
+// Presumptive bearing capacity (psf) per IBC 2021 Table 1806.2
+const BEARING_PSF = {
+  'GP/GW': 4000, 'SP/SW': 3000, 'SM': 2000, 'SM/SC': 2000, 'SC': 2000,
+  'CL/ML': 2000, 'ML': 1500, 'CL': 1500, 'CL/CH': 1500, 'CH': 1000,
+  'OH/OL': 0, 'PT': 0,    // organic/peat — not suitable, deep foundations required
+}
+
+// Frost susceptibility rating by texture (AASHTO/FHWA)
+const FROST_SUSCEPTIBILITY = {
+  S: 'Negligible', LS: 'Low', SL: 'Low', GR: 'Negligible', CB: 'Negligible',
+  L: 'Medium', SiL: 'High', Si: 'Very High',
+  CL: 'Medium', SCL: 'Low', SiCL: 'High', SC: 'Low', SiC: 'High', C: 'Medium',
+  MK: 'High', PT: 'High',
+}
 
 async function getSoilData(polygon) {
   const [cx, cy] = polygonCentroid(polygon.coordinates)
@@ -253,11 +281,21 @@ async function getSoilData(polygon) {
         c.flooding_freq_r AS flood_freq,
         c.ponding_freq_r AS pond_freq,
         c.slope_r, c.elev_r,
+        c.frostact,
         h.hzdepb_r AS restrict_depth_cm,
+        h.reskind AS restriction_kind,
         (SELECT TOP 1 chtexturegrp.texdesc FROM chorizon
          JOIN chtexturegrp ON chorizon.chkey = chtexturegrp.chkey
          WHERE chorizon.cokey = c.cokey
-         ORDER BY chorizon.hzdept_r) AS surface_texture
+         ORDER BY chorizon.hzdept_r) AS surface_texture,
+        (SELECT TOP 1 ch.ll_r FROM chorizon ch
+         WHERE ch.cokey = c.cokey ORDER BY ch.hzdept_r) AS liquid_limit,
+        (SELECT TOP 1 ch.pi_r FROM chorizon ch
+         WHERE ch.cokey = c.cokey ORDER BY ch.hzdept_r) AS plasticity_index,
+        (SELECT TOP 1 ch.ksat_r FROM chorizon ch
+         WHERE ch.cokey = c.cokey ORDER BY ch.hzdept_r) AS ksat_um_s,
+        (SELECT TOP 1 ch.dbthirdbar_r FROM chorizon ch
+         WHERE ch.cokey = c.cokey ORDER BY ch.hzdept_r) AS bulk_density
       FROM sacatalog sa
       JOIN legend l ON sa.areasymbol = l.areasymbol
       JOIN mapunit mu ON l.lkey = mu.lkey
@@ -294,23 +332,69 @@ async function getSoilData(polygon) {
   const floodFreq = sdaData?.flood_freq || 'None'
   const pondFreq = sdaData?.pond_freq || 'None'
   const restrictDepth = sdaData?.restrict_depth_cm ? Math.round(sdaData.restrict_depth_cm / 2.54) : null // cm → in
+  const restrictKind = sdaData?.restriction_kind || null
   const corrosionConcrete = sdaData?.corcon || 'Low'
   const corrosionSteel = sdaData?.corsteel || 'Low'
   const taxClass = sdaData?.taxclname || null
 
+  // Atterberg limits from SDA (critical for foundation design)
+  const liquidLimit = sdaData?.liquid_limit ? parseFloat(sdaData.liquid_limit) : null
+  const plasticityIndex = sdaData?.plasticity_index ? parseFloat(sdaData.plasticity_index) : null
+  const ksatUmS = sdaData?.ksat_um_s ? parseFloat(sdaData.ksat_um_s) : null
+  const bulkDensity = sdaData?.bulk_density ? parseFloat(sdaData.bulk_density) : null
+  const frostAction = sdaData?.frostact || FROST_SUSCEPTIBILITY[texture] || 'Low'
+
+  // USCS classification and presumptive bearing (IBC 2021 Table 1806.2)
+  const uscsClass = USCS_ESTIMATE[texture] || 'CL'
+  const presumptiveBearingPsf = BEARING_PSF[uscsClass] || 1500
+
+  // Classify expansive potential from PI (ASTM D4829 / IBC Table 1803.5.3)
+  let expansiveRisk = 'Low'
+  if (plasticityIndex !== null) {
+    if (plasticityIndex > 35) expansiveRisk = 'Very High'
+    else if (plasticityIndex > 25) expansiveRisk = 'High'
+    else if (plasticityIndex > 15) expansiveRisk = 'Moderate'
+  } else if (shrinkSwell === 'High') {
+    expansiveRisk = 'High'
+  } else if (shrinkSwell === 'Moderate') {
+    expansiveRisk = 'Moderate'
+  }
+
+  // Collapsible soil risk (common in AZ arid regions — dry low-density loess/alluvium)
+  const collapsible = (bulkDensity !== null && bulkDensity < 1.4 && ['SL', 'SiL', 'L', 'Si'].includes(texture))
+  // Liquefiable risk (saturated loose sand/silt, water table shallow)
+  const waterTableDepth = sdaData?.water_table_depth ? parseFloat(sdaData.water_table_depth) : null
+  const liquefiable = (['S', 'LS', 'SL', 'Si'].includes(texture) && waterTableDepth !== null && waterTableDepth < 50)
+
+  // Organic soil flag (peat/muck — IBC 2021 §1803.5.5)
+  const isOrganic = ['MK', 'PT', 'OH', 'OL'].includes(texture) ||
+    (taxClass && /histosol|organic|muck|peat/i.test(taxClass))
+
   // Building site limitations
   const limitations = []
-  if (shrinkSwell === 'High') limitations.push('Expansive soil — post-tension slab required (ACI 360R-10 §5.4)')
-  if (caliche) limitations.push('Caliche hardpan likely — mechanical breaking needed for excavation')
-  if (hsg === 'D') limitations.push('Very slow infiltration — detention/retention basin likely required')
+  if (isOrganic) limitations.push('Organic soil (peat/muck) — not suitable for spread footings; deep foundations required (IBC §1803.5.5)')
+  if (expansiveRisk === 'Very High' || expansiveRisk === 'High')
+    limitations.push(`Expansive soil (PI=${plasticityIndex || '?'}) — post-tension slab required (ACI 360R-10 §5.4)`)
+  else if (shrinkSwell === 'High')
+    limitations.push('High shrink-swell — post-tension slab required (ACI 360R-10 §5.4)')
+  if (collapsible) limitations.push('Collapsible soil risk (low bulk density) — pre-wetting or compaction grouting may be needed')
+  if (liquefiable) limitations.push('Liquefaction risk — shallow water table + loose granular soil; ground improvement needed')
+  if (caliche) limitations.push('Caliche hardpan likely — mechanical breaking needed for excavation ($3-8/SF)')
+  if (restrictKind && restrictDepth && restrictDepth < 40) {
+    limitations.push(`${restrictKind} at ~${restrictDepth} in. — may limit foundation depth or require rock removal`)
+  } else if (restrictDepth && restrictDepth < 40) {
+    limitations.push(`Restrictive layer at ~${restrictDepth} in. — may limit foundation depth`)
+  }
+  if (hsg === 'D') limitations.push('Very slow infiltration (HSG D) — detention/retention basin likely required')
   if (drainage.toLowerCase().includes('poor')) limitations.push('Poor drainage — dewatering may be needed during construction')
   if (floodFreq && floodFreq !== 'None') limitations.push(`Soil flooding frequency: ${floodFreq}`)
   if (corrosionConcrete === 'High') limitations.push('High concrete corrosion risk — sulfate-resistant cement required (ACI 318-19 Table 19.3.1.1)')
   if (corrosionSteel === 'High') limitations.push('High steel corrosion risk — protective coating or cathodic protection needed')
-  if (restrictDepth && restrictDepth < 40) limitations.push(`Restrictive layer at ~${restrictDepth} in. — may limit foundation depth`)
+  if (frostAction === 'High' || frostAction === 'Very High') limitations.push(`High frost susceptibility (${texture}) — frost-protected shallow foundation or deeper footing below frost line`)
+  if (presumptiveBearingPsf < 1500) limitations.push(`Low presumptive bearing (${presumptiveBearingPsf} psf) — geotechnical investigation required`)
 
   // Septic suitability
-  const septicSuitable = hsg !== 'D' && !drainage.toLowerCase().includes('poor') && shrinkSwell !== 'High'
+  const septicSuitable = hsg !== 'D' && !drainage.toLowerCase().includes('poor') && shrinkSwell !== 'High' && !isOrganic
 
   return {
     series_name: dominant?.series || sdaData?.compname || 'Unknown',
@@ -318,19 +402,32 @@ async function getSoilData(polygon) {
     texture_class: texture,
     texture_description: TEXTURE_DESC[texture] || sdaData?.surface_texture || `Soil: ${texture}`,
     taxonomic_class: taxClass,
+    uscs_estimate: uscsClass,
     hydrologic_group: hsg,
     hydrologic_group_description: HSG_DESC[hsg] || `HSG ${hsg}`,
     drainage_class: drainage,
     shrink_swell: shrinkSwell,
+    expansive_risk: expansiveRisk,
+    liquid_limit: liquidLimit,
+    plasticity_index: plasticityIndex,
+    presumptive_bearing_psf: presumptiveBearingPsf,
+    frost_susceptibility: frostAction,
+    collapsible,
+    liquefiable,
+    organic: isOrganic,
     caliche,
+    ksat_in_hr: ksatUmS ? Math.round(ksatUmS * 0.1417 * 100) / 100 : null,  // μm/s → in/hr
+    bulk_density_g_cm3: bulkDensity,
     flooding_frequency: floodFreq,
     ponding_frequency: pondFreq,
     restrictive_depth_in: restrictDepth,
+    restriction_kind: restrictKind,
+    water_table_depth_in: waterTableDepth,
     corrosion_concrete: corrosionConcrete,
     corrosion_steel: corrosionSteel,
     septic_suitable: septicSuitable,
     building_limitations: limitations,
-    bearing_hint: _bearingHint(texture, drainage, shrinkSwell),
+    bearing_hint: _bearingHint(texture, drainage, shrinkSwell, presumptiveBearingPsf, expansiveRisk, collapsible, isOrganic),
   }
 }
 
@@ -343,20 +440,193 @@ function _estimateHSG(texture) {
   return 'B'
 }
 
-function _bearingHint(texture, drainage, shrinkSwell) {
+function _bearingHint(texture, drainage, shrinkSwell, bearingPsf, expansiveRisk, collapsible, organic) {
+  if (organic)
+    return 'Unsuitable — organic soil cannot support spread footings; deep foundations required (IBC §1803.5.5)'
+  if (collapsible)
+    return 'Poor — collapsible soil; pre-wetting, dynamic compaction, or deep foundations needed'
+  if (expansiveRisk === 'Very High' || expansiveRisk === 'High')
+    return `Low (~${bearingPsf} psf) — highly expansive; PT slab or drilled shafts past active zone required`
   if (shrinkSwell === 'High' || ['C', 'CL', 'SiC'].includes(texture))
-    return 'Low — expansive/soft conditions; geotechnical boring required before design'
+    return `Low (~${bearingPsf} psf) — expansive/soft conditions; geotechnical boring required before design`
   if (drainage.toLowerCase().includes('poor'))
-    return 'Low — poor drainage; dewatering and subgrade improvement likely needed'
+    return `Low (~${bearingPsf} psf) — poor drainage; dewatering and subgrade improvement likely needed`
   if (['S', 'LS'].includes(texture))
-    return 'Variable — sandy; compaction testing required before foundation'
-  return 'Moderate — standard bearing expected; verify with geotechnical investigation'
+    return `Variable (~${bearingPsf} psf) — sandy; compaction testing required before foundation`
+  return `Moderate (~${bearingPsf} psf) — standard bearing expected; verify with geotechnical investigation`
 }
 
 function defaultSoil(lat, lon) {
   if (lat > 31 && lat < 36 && lon > -115 && lon < -109)
     return { series_name: 'Mohave-Laveen (AZ typical)', texture_class: 'SL', texture_description: 'Sandy Loam', drainage_class: 'well drained', shrink_swell: 'Low', caliche: true, hydrologic_group: 'A', hydrologic_group_description: HSG_DESC.A, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Moderate', septic_suitable: true, building_limitations: ['Caliche hardpan likely — mechanical breaking needed'], bearing_hint: 'Variable — caliche possible; get soil boring' }
   return { series_name: 'Unknown', texture_class: 'L', texture_description: 'Loam', drainage_class: 'well drained', shrink_swell: 'Low', caliche: false, hydrologic_group: 'B', hydrologic_group_description: HSG_DESC.B, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Low', septic_suitable: true, building_limitations: [], bearing_hint: 'Moderate — verify with geotechnical investigation' }
+}
+
+// ─── SOIL ZONES (SSURGO map unit polygons as GeoJSON) ────────────────────────
+//
+// Two-step approach for maximum reliability:
+// 1. Try SDA spatial query with proper WKT parsing (returns polygon geometries + properties)
+// 2. Fallback: query SDA for mukeys only, then fetch properties separately
+//
+// The WKT parser handles SQL Server's STAsText() output which uses:
+//   MULTIPOLYGON (((x y, x y, ...)), ((x y, ...)))
+//   POLYGON ((x y, x y, ...))
+
+async function getSoilZones(polygon) {
+  const [minX, minY, maxX, maxY] = polygonBounds(polygon.coordinates)
+  const buf = 0.002  // ~200m buffer for context
+
+  // Step 1: Try SDA spatial query for polygon geometries
+  try {
+    const bboxWkt = `POLYGON((${minX - buf} ${minY - buf}, ${maxX + buf} ${minY - buf}, ${maxX + buf} ${maxY + buf}, ${minX - buf} ${maxY + buf}, ${minX - buf} ${minY - buf}))`
+
+    const sdaQuery = `
+      SELECT
+        mupolygongeo.STAsText() AS geom_wkt,
+        mapunit.mukey, mapunit.muname, mapunit.musym,
+        muaggatt.hydgrpdcd AS hydgrp,
+        muaggatt.drclassdcd AS drainage,
+        muaggatt.wtdepannmin AS water_table_depth,
+        muaggatt.flodfreqdcd AS flood_freq,
+        muaggatt.slopegraddcp AS slope_gradient,
+        muaggatt.aws025wta AS avail_water_storage
+      FROM mupolygon
+      JOIN mapunit ON mupolygon.mukey = mapunit.mukey
+      LEFT JOIN muaggatt ON mapunit.mukey = muaggatt.mukey
+      WHERE mupolygongeo.STIntersects(
+        geometry::STGeomFromText('${bboxWkt}', 4326)
+      ) = 1
+    `.trim()
+
+    const res = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `query=${encodeURIComponent(sdaQuery)}&format=JSON`,
+      signal: AbortSignal.timeout(20000),
+    })
+
+    if (!res.ok) throw new Error(`SDA HTTP ${res.status}`)
+    const data = await res.json()
+    const rows = data?.Table || []
+
+    if (rows.length > 0) {
+      const features = []
+      for (const row of rows) {
+        if (!row.geom_wkt) continue
+        const geojson = wktToGeoJSON(row.geom_wkt)
+        if (!geojson) continue
+        features.push({
+          type: 'Feature',
+          properties: {
+            mukey: row.mukey, muname: row.muname || 'Unknown', musym: row.musym || '',
+            hydgrp: row.hydgrp || 'B', drainage: row.drainage || 'Well drained',
+            water_table_depth: row.water_table_depth, flood_freq: row.flood_freq || 'None',
+            slope_gradient: row.slope_gradient, avail_water_storage: row.avail_water_storage,
+          },
+          geometry: geojson,
+        })
+      }
+      if (features.length > 0) return { type: 'FeatureCollection', features }
+    }
+  } catch { /* fall through to alternative method */ }
+
+  // Step 2: Fallback — use SDA_Get_Mukey_from_intersection to get mukeys,
+  // then build simple rectangular zones from the parcel bbox
+  try {
+    const [cx, cy] = polygonCentroid(polygon.coordinates)
+    const muQuery = `SELECT mukey, muname, musym FROM mapunit WHERE mukey IN (SELECT * FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('POINT(${cx} ${cy})'))`
+    const muRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `query=${encodeURIComponent(muQuery)}&format=JSON`,
+      signal: AbortSignal.timeout(10000),
+    })
+    const muData = await muRes.json()
+    const muRows = muData?.Table || []
+    if (!muRows.length) return { type: 'FeatureCollection', features: [] }
+
+    // Get properties for each mukey
+    const mukeys = muRows.map(r => r.mukey).join(',')
+    const propQuery = `SELECT mukey, hydgrpdcd AS hydgrp, drclassdcd AS drainage, flodfreqdcd AS flood_freq, slopegraddcp AS slope_gradient FROM muaggatt WHERE mukey IN (${mukeys})`
+    const propRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `query=${encodeURIComponent(propQuery)}&format=JSON`,
+      signal: AbortSignal.timeout(10000),
+    })
+    const propData = await propRes.json()
+    const propMap = {}
+    for (const r of (propData?.Table || [])) propMap[r.mukey] = r
+
+    // Create simple polygon features spanning the parcel
+    const features = muRows.map((row, i) => {
+      const n = muRows.length
+      const sliceW = (maxX - minX + buf * 2) / n
+      const x0 = minX - buf + i * sliceW
+      const x1 = x0 + sliceW
+      const props = propMap[row.mukey] || {}
+      return {
+        type: 'Feature',
+        properties: {
+          mukey: row.mukey, muname: row.muname || 'Unknown', musym: row.musym || '',
+          hydgrp: props.hydgrp || 'B', drainage: props.drainage || 'Well drained',
+          flood_freq: props.flood_freq || 'None', slope_gradient: props.slope_gradient,
+          approximate: true,
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[x0, minY - buf], [x1, minY - buf], [x1, maxY + buf], [x0, maxY + buf], [x0, minY - buf]]],
+        },
+      }
+    })
+    return { type: 'FeatureCollection', features }
+  } catch (e) {
+    return { type: 'FeatureCollection', features: [], error: e.message }
+  }
+}
+
+// Parse WKT MULTIPOLYGON/POLYGON to GeoJSON geometry
+// Handles SQL Server spatial STAsText() output with variable whitespace
+function wktToGeoJSON(wkt) {
+  try {
+    // Normalize whitespace
+    wkt = wkt.trim()
+
+    if (wkt.startsWith('MULTIPOLYGON')) {
+      // Strip "MULTIPOLYGON" and outermost parens
+      let inner = wkt.replace(/^MULTIPOLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
+      // Split on ")),((" to separate individual polygons
+      const polyStrings = inner.split(/\)\s*,\s*\(/)
+      const polygons = polyStrings.map(ps => {
+        // Clean remaining parens and split into rings
+        ps = ps.replace(/^\(+/, '').replace(/\)+$/, '')
+        const ringStrings = ps.split(/\)\s*,\s*\(/)
+        return ringStrings.map(rs => {
+          rs = rs.replace(/^\(+/, '').replace(/\)+$/, '')
+          return rs.split(/\s*,\s*/).map(pt => {
+            const parts = pt.trim().split(/\s+/)
+            return [parseFloat(parts[0]), parseFloat(parts[1])]
+          })
+        })
+      })
+      return { type: 'MultiPolygon', coordinates: polygons }
+    }
+
+    if (wkt.startsWith('POLYGON')) {
+      let inner = wkt.replace(/^POLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
+      const ringStrings = inner.split(/\)\s*,\s*\(/)
+      const rings = ringStrings.map(rs => {
+        rs = rs.replace(/^\(+/, '').replace(/\)+$/, '')
+        return rs.split(/\s*,\s*/).map(pt => {
+          const parts = pt.trim().split(/\s+/)
+          return [parseFloat(parts[0]), parseFloat(parts[1])]
+        })
+      })
+      return { type: 'Polygon', coordinates: rings }
+    }
+
+    return null
+  } catch { return null }
 }
 
 // ─── SEISMIC (USGS NSHM) ─────────────────────────────────────────────────────
@@ -438,13 +708,27 @@ function getSeismicDesignCategory(sds, sd1) {
   return order[bySd1] > order[bySds] ? bySd1 : bySds
 }
 
-function recommendFoundation(floodZone, slopePct, soilClass, shrinkSwell, sdc, caliche) {
+function recommendFoundation(floodZone, slopePct, soilClass, shrinkSwell, sdc, caliche, soilData) {
+  // Priority ladder — most critical condition wins
+  const organic = soilData?.organic
+  const collapsible = soilData?.collapsible
+  const liquefiable = soilData?.liquefiable
+  const expansiveRisk = soilData?.expansive_risk
+
+  if (organic)
+    return ['DEEP_PILE', 'IBC 2021 §1803.5.5 — Deep piles through organic soil to competent bearing stratum']
   if (['AE', 'VE', 'AO', 'AH'].includes(floodZone))
     return ['ELEVATED_PILE', `ASCE 7-22 Ch.5 — Elevated/pile foundation required in Zone ${floodZone}`]
   if (slopePct > 30)
     return ['DRILLED_CAISSON', 'ACI 350-20 §4.3 + IBC 2021 §1807 — Drilled caisson required for slope > 30%']
   if (['D', 'E', 'F'].includes(sdc))
     return ['DEEP_PILE_SEISMIC', `ASCE 7-22 Ch.12 — Deep pile with seismic detailing required for SDC ${sdc}`]
+  if (liquefiable)
+    return ['DEEP_PILE_SEISMIC', 'IBC 2021 §1803.5.11 — Deep foundations past liquefiable stratum + ground improvement']
+  if (collapsible)
+    return ['GRADE_BEAM_ON_PIERS', 'IBC 2021 §1803.5.9 — Grade beams on drilled piers past collapsible zone']
+  if (expansiveRisk === 'Very High' || expansiveRisk === 'High')
+    return ['POST_TENSIONED_SLAB', `ACI 360R-10 §5.4 — PT slab for ${expansiveRisk.toLowerCase()} expansive risk (PI=${soilData?.plasticity_index || '?'})`]
   if (shrinkSwell === 'High' || ['C', 'CL', 'SiC'].includes(soilClass))
     return ['POST_TENSIONED_SLAB', 'ACI 360R-10 §5.4 — Post-tensioned slab for expansive/high-shrink-swell soils']
   if (caliche)
@@ -464,7 +748,7 @@ function estimateStructuralLoads(windMph, sds, sd1, sdc, elevationFt) {
 // ─── COST ────────────────────────────────────────────────────────────────────
 
 const REGION_MULT = { phoenix: 0.95, tucson: 0.88, flagstaff: 1.05, prescott: 0.98, default: 0.95 }
-const FND_COSTS = { ELEVATED_PILE: { low: 35, high: 65 }, DRILLED_CAISSON: { low: 25, high: 45 }, DEEP_PILE_SEISMIC: { low: 40, high: 70 }, POST_TENSIONED_SLAB: { low: 14, high: 22 }, GRADE_BEAM_ON_PIERS: { low: 18, high: 30 }, MAT_FOUNDATION: { low: 20, high: 35 }, CONVENTIONAL_SLAB: { low: 8, high: 15 } }
+const FND_COSTS = { DEEP_PILE: { low: 45, high: 80 }, ELEVATED_PILE: { low: 35, high: 65 }, DRILLED_CAISSON: { low: 25, high: 45 }, DEEP_PILE_SEISMIC: { low: 40, high: 70 }, POST_TENSIONED_SLAB: { low: 14, high: 22 }, GRADE_BEAM_ON_PIERS: { low: 18, high: 30 }, MAT_FOUNDATION: { low: 20, high: 35 }, CONVENTIONAL_SLAB: { low: 8, high: 15 } }
 
 function identifyRegion(lat, lon) {
   if (lat > 33.2 && lat < 34.0 && lon > -113.0 && lon < -111.5) return 'phoenix'
@@ -522,7 +806,11 @@ SITE DATA:
 - Flood zone: ${summary.flood_zone} — Risk: ${floodRisk}
 - Seismic Design Category: ${summary.seismic_sdc}
 - Wildfire risk: ${summary.fire_risk}
-- Soil: ${summary.soil_texture}, HSG: ${summary.hydrologic_group || 'B'}, shrink-swell: ${summary.shrink_swell}, caliche: ${summary.caliche ? 'Yes' : 'No'}, drainage: ${summary.drainage_class || 'well drained'}
+- Soil: ${summary.soil_texture}, USCS: ${summary.uscs_estimate || '?'}, HSG: ${summary.hydrologic_group || 'B'}
+  Shrink-swell: ${summary.shrink_swell}, Expansive risk: ${summary.expansive_risk || '?'}, LL=${summary.liquid_limit || '?'}, PI=${summary.plasticity_index || '?'}
+  Bearing: ~${summary.presumptive_bearing_psf || '?'} psf (IBC Table 1806.2), Drainage: ${summary.drainage_class || 'well drained'}
+  Caliche: ${summary.caliche ? 'Yes' : 'No'}, Collapsible: ${summary.collapsible ? 'Yes' : 'No'}, Liquefiable: ${summary.liquefiable ? 'Yes' : 'No'}, Organic: ${summary.organic ? 'Yes' : 'No'}
+  Frost: ${summary.frost_susceptibility || 'Low'}, Corrosion (concrete/steel): ${summary.corrosion_concrete || 'Low'}/${summary.corrosion_steel || 'Low'}
 - Building limitations: ${(summary.building_limitations || []).join('; ') || 'None identified'}
 - Wetlands: ${summary.wetlands_present ? 'Present — Section 404 permit likely required' : 'None detected'}
 - Wind: ${summary.wind_mph} mph, Snow: ${summary.snow_psf} psf
@@ -980,8 +1268,8 @@ exports.handler = async (event) => {
     const address = body.address || ''
     const buildingType = body.building_type || 'single_family'
 
-    // Parallel GIS data fetch (13 layers)
-    const [elevData, floodData, soilData, seismicData, fireData, wetlandsData, precipData, contamData, hydroData, speciesData, historicData, landslideData, slrData] = await Promise.all([
+    // Parallel GIS data fetch (14 layers)
+    const [elevData, floodData, soilData, seismicData, fireData, wetlandsData, precipData, contamData, hydroData, speciesData, historicData, landslideData, slrData, soilZonesData] = await Promise.all([
       getElevationGrid(polygon),
       getFloodZone(polygon),
       getSoilData(polygon),
@@ -995,13 +1283,14 @@ exports.handler = async (event) => {
       getHistoricSites(polygon),
       getLandslideRisk(polygon),
       getSeaLevelRise(polygon),
+      getSoilZones(polygon),
     ])
 
     // Engineering calcs
     const slopeData = calculateSlope(elevData.grid, elevData.cell_width_ft)
     const cutFill = calculateCutFill(elevData.grid, elevData.avg_elevation_ft, elevData.cell_width_ft)
     const sdc = getSeismicDesignCategory(seismicData.sds, seismicData.sd1)
-    const [foundationType, foundationCode] = recommendFoundation(floodData.zone, slopeData.avg_slope_pct, soilData.texture_class, soilData.shrink_swell, sdc, soilData.caliche)
+    const [foundationType, foundationCode] = recommendFoundation(floodData.zone, slopeData.avg_slope_pct, soilData.texture_class, soilData.shrink_swell, sdc, soilData.caliche, soilData)
     const loads = estimateStructuralLoads(seismicData.wind_mph, seismicData.sds, seismicData.sd1, sdc, elevData.avg_elevation_ft)
     const runoff = calculateRunoff(elevData.area_acres, slopeData.avg_slope_pct, soilData.texture_class)
     // Override rainfall intensity with real NOAA data if available
@@ -1025,7 +1314,13 @@ exports.handler = async (event) => {
       avg_slope_pct: slopeData.avg_slope_pct, max_slope_pct: slopeData.max_slope_pct,
       flood_zone: floodData.zone, seismic_sdc: sdc,
       fire_risk: fireData.risk_class,
-      soil_texture: soilData.texture_class, shrink_swell: soilData.shrink_swell, caliche: soilData.caliche,
+      soil_texture: soilData.texture_class, uscs_estimate: soilData.uscs_estimate,
+      shrink_swell: soilData.shrink_swell, expansive_risk: soilData.expansive_risk,
+      liquid_limit: soilData.liquid_limit, plasticity_index: soilData.plasticity_index,
+      presumptive_bearing_psf: soilData.presumptive_bearing_psf,
+      frost_susceptibility: soilData.frost_susceptibility,
+      collapsible: soilData.collapsible, liquefiable: soilData.liquefiable, organic: soilData.organic,
+      caliche: soilData.caliche, corrosion_concrete: soilData.corrosion_concrete, corrosion_steel: soilData.corrosion_steel,
       hydrologic_group: soilData.hydrologic_group, drainage_class: soilData.drainage_class,
       building_limitations: soilData.building_limitations,
       wetlands_present: wetlandsData.present,
@@ -1048,6 +1343,7 @@ exports.handler = async (event) => {
           seismic: { ...seismicData, sdc }, fire: fireData, wetlands: wetlandsData,
           precipitation: precipData, contamination: contamData, hydrography: hydroData,
           endangered_species: speciesData, historic_sites: historicData, landslide: landslideData, sea_level_rise: slrData,
+          soil_zones: soilZonesData,
           cut_fill: cutFill,
           foundation: { type: foundationType, code_ref: foundationCode },
           loads, runoff,
