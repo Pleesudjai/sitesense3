@@ -19,9 +19,18 @@ export default function App() {
     floors: 1,
     budget: 'mid',
   })
+  const [searchError, setSearchError] = useState(null)
 
   const handleSearch = () => {
-    if (address.trim()) setSearchTrigger(t => t + 1)
+    if (address.trim()) {
+      setSearchError(null)
+      setSearchTrigger(t => t + 1)
+    }
+  }
+
+  const handleSearchError = (msg) => {
+    setSearchError(msg)
+    setTimeout(() => setSearchError(null), 4000)
   }
 
   const handleAnalyze = async () => {
@@ -99,14 +108,36 @@ export default function App() {
         <div className="w-3/5 relative">
           <MapView
             onPolygonChange={setPolygon}
+            onSearchError={handleSearchError}
             result={result}
             searchAddress={address}
             searchTrigger={searchTrigger}
           />
+
+          {/* Draw hint — shown until polygon is drawn */}
           {!polygon && (
-            <div className="absolute inset-0 flex items-end justify-center pb-12 pointer-events-none">
-              <div className="bg-black/70 text-white text-sm px-5 py-3 rounded-lg backdrop-blur">
-                📍 Draw a polygon on the map to define your parcel, then click <b>Analyze Parcel</b>
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none">
+              <div className="bg-black/80 text-white text-sm px-5 py-3 rounded-xl backdrop-blur border border-teal/40 shadow-lg text-center">
+                <div className="font-semibold text-teal mb-0.5">Draw your parcel</div>
+                <div className="text-gray-300 text-xs">Click to place corners · Double-click to finish · Trash icon to redo</div>
+              </div>
+            </div>
+          )}
+
+          {/* Polygon ready badge */}
+          {polygon && !result && !loading && (
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 pointer-events-none">
+              <div className="bg-teal/90 text-white text-sm px-5 py-2 rounded-xl shadow-lg text-center font-semibold">
+                ✓ Parcel drawn — click Analyze Parcel
+              </div>
+            </div>
+          )}
+
+          {/* Address not found toast */}
+          {searchError && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none z-50">
+              <div className="bg-red-900/90 border border-red-500 text-white text-sm px-5 py-2.5 rounded-lg shadow-xl">
+                ⚠️ {searchError}
               </div>
             </div>
           )}

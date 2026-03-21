@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import MapboxDraw from '@mapbox/mapbox-gl-draw'
-import * as turf from '@turf/area'
 
 // Free Esri World Imagery satellite style — no token required
 const ESRI_SATELLITE_STYLE = {
@@ -32,10 +31,6 @@ const ESRI_SATELLITE_STYLE = {
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
 }
 
-/**
- * Geocode an address using Nominatim (OpenStreetMap) — free, no token.
- * Returns { lat, lon } or null if not found.
- */
 async function geocodeAddress(address) {
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=us`
   const res = await fetch(url, {
@@ -46,18 +41,14 @@ async function geocodeAddress(address) {
   return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name }
 }
 
-/**
- * MapView — Satellite map with polygon drawing tool and address search.
- * Uses MapLibre GL JS (no token) + Esri World Imagery (free satellite).
- * Calls onPolygonChange(GeoJSON_geometry) when user draws/updates a polygon.
- */
-export default function MapView({ onPolygonChange, result, searchAddress, searchTrigger }) {
+export default function MapView({ onPolygonChange, onSearchError, result, searchAddress, searchTrigger }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const draw = useRef(null)
+  const markers = useRef([])
 
   useEffect(() => {
-    if (map.current) return  // already initialized
+    if (map.current) return
 
     map.current = new maplibregl.Map({
       container: mapContainer.current,
@@ -69,11 +60,10 @@ export default function MapView({ onPolygonChange, result, searchAddress, search
     map.current.addControl(new maplibregl.NavigationControl(), 'top-left')
     map.current.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left')
 
-    // Polygon draw tool
     draw.current = new MapboxDraw({
       displayControlsDefault: false,
       controls: { polygon: true, trash: true },
-      defaultMode: 'simple_select',
+      defaultMode: 'draw_polygon',  // auto-start in draw mode
       styles: [
         {
           id: 'gl-draw-polygon-fill',
@@ -82,27 +72,74 @@ export default function MapView({ onPolygonChange, result, searchAddress, search
           paint: { 'fill-color': '#1C7293', 'fill-opacity': 0.25 },
         },
         {
+          id: 'gl-draw-polygon-fill-active',
+          type: 'fill',
+          filter: ['all', ['==', '$type', 'Polygon'], ['==', 'active', 'true']],
+          paint: { 'fill-color': '#02C39A', 'fill-opacity': 0.3 },
+        },
+        {
           id: 'gl-draw-polygon-stroke',
           type: 'line',
           filter: ['all', ['==', '$type', 'Polygon']],
-          paint: { 'line-color': '#02C39A', 'line-width': 2 },
+          paint: { 'line-color': '#02C39A', 'line-width': 2.5 },
+        },
+        {
+          id: 'gl-draw-polygon-stroke-active',
+          type: 'line',
+          filter: ['all', ['==', '$type', 'Polygon'], ['==', 'active', 'true']],
+          paint: { 'line-color': '#02C39A', 'line-width': 2.5, 'line-dasharray': [4, 2] },
+        },
+        {
+          id: 'gl-draw-vertex',
+          type: 'circle',
+          filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'vertex']],
+          paint: { 'circle-radius': 5, 'circle-color': '#02C39A', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
+        },
+        {
+          id: 'gl-draw-midpoint',
+          type: 'circle',
+          filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
+          paint: { 'circle-radius': 3, 'circle-color': '#fff', 'circle-stroke-width': 1, 'circle-stroke-color': '#02C39A' },
         },
       ],
     })
     map.current.addControl(draw.current, 'top-left')
 
-    const handleChange = () => {
+    const handleCreate = () => {
       const data = draw.current.getAll()
-      if (data.features.length > 0) {
-        onPolygonChange(data.features[0].geometry)
-      } else {
-        onPolygonChange(null)
+      if (data.features.length === 0) return
+
+      // Keep only the most recently drawn polygon — delete all previous
+      if (data.features.length > 1) {
+        const ids = data.features.slice(0, -1).map(f => f.id)
+        draw.current.delete(ids)
       }
+
+      const feature = draw.current.getAll().features[0]
+      if (!feature) return
+
+      onPolygonChange(feature.geometry)
+
+      // Auto-zoom to the drawn polygon
+      const coords = feature.geometry.coordinates[0]
+      const lngs = coords.map(c => c[0])
+      const lats = coords.map(c => c[1])
+      map.current.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 80, maxZoom: 18, duration: 800 }
+      )
     }
 
-    map.current.on('draw.create', handleChange)
-    map.current.on('draw.update', handleChange)
-    map.current.on('draw.delete', handleChange)
+    const handleUpdate = () => {
+      const data = draw.current.getAll()
+      if (data.features.length > 0) onPolygonChange(data.features[0].geometry)
+    }
+
+    const handleDelete = () => onPolygonChange(null)
+
+    map.current.on('draw.create', handleCreate)
+    map.current.on('draw.update', handleUpdate)
+    map.current.on('draw.delete', handleDelete)
 
     return () => map.current?.remove()
   }, [])
@@ -111,26 +148,41 @@ export default function MapView({ onPolygonChange, result, searchAddress, search
   useEffect(() => {
     if (!searchTrigger || !searchAddress || !map.current) return
     geocodeAddress(searchAddress).then(loc => {
-      if (!loc) return
-      map.current.flyTo({ center: [loc.lon, loc.lat], zoom: 16, speed: 1.5 })
+      if (!loc) {
+        onSearchError?.('Address not found — try a more specific address')
+        return
+      }
+      map.current.flyTo({ center: [loc.lon, loc.lat], zoom: 17, speed: 1.8 })
+      // Clear old polygon and re-enter draw mode after fly
+      setTimeout(() => {
+        if (draw.current) {
+          draw.current.deleteAll()
+          onPolygonChange(null)
+          draw.current.changeMode('draw_polygon')
+        }
+      }, 1200)
     })
   }, [searchTrigger])
 
-  // Add result marker when analysis is ready
+  // Zoom to analysis result bbox
   useEffect(() => {
     if (!map.current || !result?.elevation?.bbox) return
 
-    const bbox = result.elevation.bbox
-    const center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
+    const [minLng, minLat, maxLng, maxLat] = result.elevation.bbox
+    map.current.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 60, maxZoom: 18, duration: 600 })
 
+    // Clear old markers
+    markers.current.forEach(m => m.remove())
+    markers.current = []
+
+    const center = [(minLng + maxLng) / 2, (minLat + maxLat) / 2]
     const el = document.createElement('div')
     el.style.cssText = `
       width: 14px; height: 14px; border-radius: 50%;
       background: #02C39A; border: 2px solid white;
       box-shadow: 0 0 8px rgba(2,195,154,0.6); cursor: pointer;
     `
-
-    new maplibregl.Marker(el)
+    const marker = new maplibregl.Marker(el)
       .setLngLat(center)
       .setPopup(new maplibregl.Popup().setHTML(
         `<div style="font-size:12px; color:#000; line-height:1.6">
@@ -141,7 +193,7 @@ export default function MapView({ onPolygonChange, result, searchAddress, search
         </div>`
       ))
       .addTo(map.current)
-
+    markers.current.push(marker)
   }, [result])
 
   return (
