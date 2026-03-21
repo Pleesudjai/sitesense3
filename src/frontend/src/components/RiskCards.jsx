@@ -30,22 +30,37 @@ const RISK_CONFIG = {
   soil: {
     label: 'Soil Conditions',
     getValue: d => {
-      const hsg = d.soil?.hydrologic_group ? `HSG ${d.soil.hydrologic_group}` : ''
+      const parts = []
+      if (d.soil?.uscs_estimate) parts.push(d.soil.uscs_estimate)
       const tex = d.soil?.texture_description?.split(' ')[0] || 'Unknown'
-      return hsg ? `${tex} · ${hsg}` : tex
+      if (!parts.length) parts.push(tex)
+      const hsg = d.soil?.hydrologic_group ? `HSG ${d.soil.hydrologic_group}` : ''
+      if (hsg) parts.push(hsg)
+      return parts.join(' · ')
     },
-    getLevel: d => (d.soil?.shrink_swell === 'High' ? 'HIGH' :
-                    d.soil?.caliche || d.soil?.hydrologic_group === 'D' ? 'MODERATE' : 'LOW'),
+    getLevel: d => {
+      if (d.soil?.collapsible || d.soil?.liquefiable || d.soil?.organic) return 'HIGH'
+      if (d.soil?.expansive_risk === 'High' || d.soil?.shrink_swell === 'High') return 'HIGH'
+      if (d.soil?.expansive_risk === 'Moderate' || d.soil?.caliche || d.soil?.hydrologic_group === 'D') return 'MODERATE'
+      return 'LOW'
+    },
     getDetail: d => {
       const items = []
+      if (d.soil?.presumptive_bearing_psf) items.push(`Bearing: ${d.soil.presumptive_bearing_psf.toLocaleString()} psf`)
+      if (d.soil?.expansive_risk) items.push(`Expansive: ${d.soil.expansive_risk}`)
+      if (d.soil?.plasticity_index != null) items.push(`PI=${d.soil.plasticity_index}`)
       if (d.soil?.shrink_swell === 'High') items.push('Expansive clay')
       if (d.soil?.caliche) items.push('Caliche detected')
+      if (d.soil?.collapsible) items.push('COLLAPSIBLE')
+      if (d.soil?.liquefiable) items.push('LIQUEFIABLE')
+      if (d.soil?.organic) items.push('ORGANIC')
       if (d.soil?.flooding_frequency && d.soil.flooding_frequency !== 'None') items.push(`Flooding: ${d.soil.flooding_frequency}`)
       if (d.soil?.corrosion_concrete === 'High') items.push('High concrete corrosion')
-      if (d.soil?.building_limitations?.length) items.push(`${d.soil.building_limitations.length} limitation(s)`)
       if (!items.length) items.push(d.soil?.drainage_class || 'Standard conditions')
       return items.join(' · ')
     },
+    // Extra detail rendered separately in the card
+    getBuildingLimitations: d => d.soil?.building_limitations || [],
   },
   wetlands: {
     label: 'Wetlands',
@@ -135,11 +150,14 @@ export default function RiskCards({ data }) {
             ? cfg.getLevel(data)
             : cfg.getLevel(cfg.getValue(data))
           const styles = LEVEL_STYLES[level] || LEVEL_STYLES.LOW
+          const isSoil = key === 'soil'
+          const limitations = isSoil && cfg.getBuildingLimitations ? cfg.getBuildingLimitations(data) : []
+          const hasHazard = isSoil && (data.soil?.collapsible || data.soil?.liquefiable || data.soil?.organic)
 
           return (
             <div
               key={key}
-              className={`border rounded-lg p-3 ${styles.badge} flex flex-col gap-1`}
+              className={`border rounded-lg p-3 ${styles.badge} flex flex-col gap-1 ${isSoil ? 'col-span-3' : ''}`}
             >
               <div className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${styles.dot} shrink-0`} />
@@ -148,6 +166,23 @@ export default function RiskCards({ data }) {
               </div>
               <div className="text-sm font-bold">{cfg.getValue(data)}</div>
               <div className="text-xs opacity-70 leading-tight">{cfg.getDetail(data)}</div>
+              {isSoil && hasHazard && (
+                <div className="mt-1 text-xs font-bold text-red-400 bg-red-950/50 rounded px-2 py-1">
+                  {[
+                    data.soil?.collapsible && 'Collapsible soil',
+                    data.soil?.liquefiable && 'Liquefiable soil',
+                    data.soil?.organic && 'Organic soil',
+                  ].filter(Boolean).join(' | ')}
+                  {' — special foundation required'}
+                </div>
+              )}
+              {isSoil && limitations.length > 0 && (
+                <ul className="mt-1 text-xs opacity-80 list-disc list-inside leading-tight">
+                  {limitations.map((lim, i) => (
+                    <li key={i}>{lim}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )
         })}

@@ -18,6 +18,9 @@ What used to cost $50,000 and 3 weeks now takes half a minute."
 User draws a polygon on a satellite map → app auto-pulls:
 - DEM elevation grid (USGS 3DEP) for the polygon + 100m buffer
 - GIS risk layers: flood zone (FEMA), seismic (USGS), soil (USDA), wetlands (USFWS), fire (rule-based)
+- Comprehensive soil analysis: USCS classification, Atterberg limits (LL, PI), presumptive bearing capacity
+- Geotechnical hazard flags: collapsible soil detection, liquefaction risk, organic soil flag
+- Corrosion risk assessment: concrete sulfate attack class, steel corrosion potential
 - Civil engineering calculations: slope, cut/fill volumes, foundation type, structural loads, stormwater
 - ROM cost estimate + 10-year projection (4.5% ENR CCI inflation)
 - Claude API translates output into plain English → PDF report
@@ -27,6 +30,9 @@ User draws a polygon on a satellite map → app auto-pulls:
 - **ACI 360R-10** — Slab-on-ground design and construction
 - **ASCE 7-22** — Wind (Ch.26-27), seismic (Ch.12), flood (Ch.5), snow (Ch.7) loads
 - **IBC 2021** — Soils §1803, flood §1612
+- **IBC 2021 Table 1806.2** — Presumptive bearing capacity from soil class
+- **ASTM D4829** — Expansive soil classification from Plasticity Index (PI)
+- **AASHTO/FHWA** — Frost susceptibility classification from soil fines content
 
 ### Arizona-Specific Rules (Our Differentiator)
 - Expansive clay / shrink-swell soil → PT slab (ACI 360R-10 §5.4)
@@ -35,6 +41,8 @@ User draws a polygon on a satellite map → app auto-pulls:
 - Water adequacy certificate flag (ARS §9-463.06)
 - WUI fire zones → ASCE 7 Ch.27 + ignition-resistant construction
 - Heat flag: "Optimal build window Oct–Apr, summer adds 25% labor"
+- Collapsible alluvial soils in desert basins → deep foundations or compaction grouting
+- Sulfate attack on concrete from desert soil chemistry → ACI 318 exposure class S1–S3
 - Regional cost multipliers: Phoenix 0.95×, Tucson 0.88×, Flagstaff 1.05×
 
 ## Current Architecture (AS-BUILT)

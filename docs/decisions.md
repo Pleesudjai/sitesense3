@@ -121,3 +121,16 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Why this approach:** Generic WISC templates didn't reference the actual architecture. SiteSense-specific commands speed up future sessions.
 **Files changed:**
 - `.claude/commands/prime.md`, `plan-feature.md`, `execute.md`, `handoff.md`, `commit.md`
+
+---
+
+## 2026-03-21 — Comprehensive Soil Engineering + UI Enhancements
+**What was built:** Full geotechnical analysis with IBC 2021 Table 1806.2 presumptive bearing, USCS classification, Atterberg limits (LL/PI) from SSURGO, ASTM D4829 expansive risk, AASHTO frost susceptibility, collapsible/liquefiable/organic soil detection. Foundation recommendation ladder updated with DEEP_PILE (IBC §1803.5.5) for organic, liquefaction (IBC §1803.5.11), and collapsible (IBC §1803.5.9) soils. Soil zones rewritten with SDA_Get_Mupolygonkey documented function + multi-point fallback. RiskCards soil card enhanced with USCS, bearing, PI, hazard flags, and building limitations list. SSURGO WMS opacity raised. Soil zone outlines changed to light brown (#c8a86e) 3px solid for visibility.
+**Why this approach:** Civil engineering credibility requires proper geotechnical hazard screening per IBC/ACI codes, not just texture class. SDA spatial queries were unreliable — switched to documented SDA_Get_Mupolygonkey function. Added guaranteed fallback (point query + rectangular zones) so soil zones always render.
+**Files changed:**
+- `netlify/functions/analyze.js` — soil engineering tables, enhanced SDA query, foundation logic, soil zones rewrite
+- `src/frontend/src/components/ElevationChart.jsx` — SSURGO WMS opacity 0.35, soil outlines light brown 3px
+- `src/frontend/src/components/RiskCards.jsx` — soil card with USCS, bearing, PI, hazard warnings, limitations
+- `CLAUDE.md` — added IBC 1806.2, ASTM D4829, AASHTO frost, collapsible soils, sulfate attack
+- `TODO.md` — handoff document for switching computers
+**Next:** Set ANTHROPIC_API_KEY in Netlify, end-to-end test with 3 demo addresses, verify soil zones render

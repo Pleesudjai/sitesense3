@@ -158,6 +158,23 @@ function buildDemoResult() {
     description: 'Inland parcel — sea level rise not applicable',
   }
 
+  // Soil zones — 2 map units crossing the parcel (demo)
+  const soil_zones = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { mukey: '654321', muname: 'Laveen loam, 0-1% slopes', musym: 'LaA', hydgrp: 'C', drainage: 'Somewhat poorly drained', flood_freq: 'None' },
+        geometry: { type: 'Polygon', coordinates: [[[-112.0735, 33.4488], [-112.0720, 33.4488], [-112.0720, 33.4500], [-112.0735, 33.4500], [-112.0735, 33.4488]]] },
+      },
+      {
+        type: 'Feature',
+        properties: { mukey: '654322', muname: 'Mohave sandy loam, 0-1% slopes', musym: 'MoA', hydgrp: 'A', drainage: 'Well drained', flood_freq: 'None' },
+        geometry: { type: 'Polygon', coordinates: [[[-112.0720, 33.4488], [-112.0705, 33.4488], [-112.0705, 33.4508], [-112.0720, 33.4508], [-112.0720, 33.4488]]] },
+      },
+    ],
+  }
+
   // Cut/fill: gentle slope means modest earthwork to achieve pad grade
   const cutFill = {
     cut_cy:        310,
@@ -297,6 +314,7 @@ Site-prep ROM: $${totalNow.toLocaleString()} (midpoint) · Range $${costs.low_es
       historic_sites,
       landslide,
       sea_level_rise,
+      soil_zones,
       buildable_sf: buildableSf,
       costs,
       summary,

@@ -320,7 +320,15 @@ function buildContourGeoJSON(grid, bbox, minElev, maxElev, range, extendFactor =
 }
 
 // ── satellite + contour view (interactive zoom/pan via MapLibre) ──────────────
-function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon }) {
+// HSG color mapping for soil zone rendering
+const HSG_COLORS = {
+  A: '#2ecc71',  // green — low runoff, sandy
+  B: '#f1c40f',  // yellow — moderate
+  C: '#e67e22',  // orange — moderately high
+  D: '#e74c3c',  // red — high runoff, clay
+}
+
+function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon, soilZones }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const { aspect } = geoSpans(bbox)
@@ -391,7 +399,57 @@ function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon }) {
         },
       })
 
-      // Draw the user's input polygon boundary
+      // Soil map unit polygons — light brown solid outlines, HSG-tinted fill
+      if (soilZones && soilZones.features && soilZones.features.length > 0) {
+        map.addSource('soil-zones', { type: 'geojson', data: soilZones })
+        map.addLayer({
+          id: 'soil-fill', type: 'fill', source: 'soil-zones',
+          paint: {
+            'fill-color': ['match', ['get', 'hydgrp'],
+              'A', HSG_COLORS.A, 'B', HSG_COLORS.B,
+              'C', HSG_COLORS.C, 'D', HSG_COLORS.D,
+              'A/D', HSG_COLORS.D, 'B/D', HSG_COLORS.D,
+              'C/D', HSG_COLORS.D, '#888888'],
+            'fill-opacity': 0.2,
+          },
+        })
+        map.addLayer({
+          id: 'soil-outline', type: 'line', source: 'soil-zones',
+          paint: { 'line-color': '#c8a86e', 'line-width': 3, 'line-opacity': 1.0 },
+        })
+        // Soil zone labels
+        map.addLayer({
+          id: 'soil-labels', type: 'symbol', source: 'soil-zones',
+          layout: {
+            'symbol-placement': 'point',
+            'text-field': ['concat', ['get', 'muname'], '\nHSG ', ['get', 'hydgrp']],
+            'text-size': 11,
+            'text-font': ['Open Sans Bold'],
+            'text-anchor': 'center',
+            'text-max-width': 12,
+          },
+          paint: {
+            'text-color': '#c8a86e',
+            'text-halo-color': 'rgba(0,0,0,0.9)',
+            'text-halo-width': 2,
+          },
+        })
+      }
+
+      // SSURGO WMS overlay as a fallback/additional layer (shows USDA soil boundaries)
+      map.addSource('ssurgo-wms', {
+        type: 'raster',
+        tiles: [
+          'https://sdmdataaccess.sc.egov.usda.gov/Spatial/SDM.wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=mapunitpoly&BBOX={bbox-epsg-3857}&WIDTH=512&HEIGHT=512&SRS=EPSG:3857&FORMAT=image/png&TRANSPARENT=true'
+        ],
+        tileSize: 512,
+      })
+      map.addLayer({
+        id: 'ssurgo-wms-layer', type: 'raster', source: 'ssurgo-wms',
+        paint: { 'raster-opacity': 0.35 },
+      })
+
+      // Draw the user's input polygon boundary (on top of everything)
       if (polygon && polygon.coordinates) {
         map.addSource('parcel', {
           type: 'geojson',
@@ -403,14 +461,14 @@ function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon }) {
         })
         map.addLayer({
           id: 'parcel-fill', type: 'fill', source: 'parcel',
-          paint: { 'fill-color': '#00e5ff', 'fill-opacity': 0.08 },
+          paint: { 'fill-color': '#00e5ff', 'fill-opacity': 0.05 },
         })
       }
     })
 
     mapRef.current = map
     return () => { map.remove(); mapRef.current = null }
-  }, [bbox, grid, minElev, maxElev, range, polygon])
+  }, [bbox, grid, minElev, maxElev, range, polygon, soilZones])
 
   return (
     <div className="relative rounded overflow-hidden border border-gray-700"
@@ -873,7 +931,7 @@ function LegendBar({ minElev, maxElev, avgElev }) {
 }
 
 // ── main export ───────────────────────────────────────────────────────────────
-export default function ElevationChart({ grid, bbox, polygon }) {
+export default function ElevationChart({ grid, bbox, polygon, soilZones }) {
   const [view, setView] = useState('sat')
   if (!grid || !bbox) return null
 
@@ -902,7 +960,7 @@ export default function ElevationChart({ grid, bbox, polygon }) {
 
       {view === 'sat' && (
         <>
-          <SatelliteContour grid={grid} bbox={bbox} minElev={minElev} maxElev={maxElev} range={range} polygon={polygon} />
+          <SatelliteContour grid={grid} bbox={bbox} minElev={minElev} maxElev={maxElev} range={range} polygon={polygon} soilZones={soilZones} />
           <LegendBar minElev={minElev} maxElev={maxElev} avgElev={avgElev} />
         </>
       )}
