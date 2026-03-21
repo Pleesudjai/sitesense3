@@ -14,7 +14,7 @@ const QUALITY_OPTIONS = [
   { value: 'luxury',   label: 'Luxury',    rate: 350 },
 ]
 
-export default function HouseConceptPanel({ address, onAddressChange, siteData, onResult }) {
+export default function HouseConceptPanel({ address, parcelReady, siteData, onResult }) {
   const [bedrooms, setBedrooms]     = useState(2)
   const [bathrooms, setBathrooms]   = useState(2)
   const [stories, setStories]       = useState(1)
@@ -106,12 +106,13 @@ export default function HouseConceptPanel({ address, onAddressChange, siteData, 
             </select>
           </label>
 
-          {/* Location from header */}
-          {address && (
-            <div className="text-xs text-gray-400 col-span-2 sm:col-span-2 flex items-end pb-1">
-              <span>Location: <span className="text-white font-medium">{address}</span></span>
-            </div>
-          )}
+          {/* Location from drawn parcel */}
+          <div className="text-xs text-gray-400 col-span-2 sm:col-span-2 flex items-end pb-1">
+            {parcelReady
+              ? <span>Parcel location: <span className="text-white font-medium">{address}</span></span>
+              : <span className="text-amber-400">Draw a rectangle on the Site Analysis map to set location</span>
+            }
+          </div>
         </div>
 
         {/* Site data toggle */}
@@ -129,10 +130,10 @@ export default function HouseConceptPanel({ address, onAddressChange, siteData, 
 
         <button
           type="submit"
-          disabled={loading || !address?.trim()}
+          disabled={loading || !parcelReady}
           className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5 transition-colors"
         >
-          {loading ? 'Generating Concepts...' : !address?.trim() ? 'Enter an address in the search bar first' : 'Generate Concepts'}
+          {loading ? 'Generating Concepts...' : !parcelReady ? 'Draw a parcel on the Site Analysis map first' : 'Generate Concepts'}
         </button>
       </form>
 

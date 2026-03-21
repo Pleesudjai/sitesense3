@@ -29,6 +29,19 @@ export default function App() {
   const [houseResult, setHouseResult] = useState(null)
   const [forecastResult, setForecastResult] = useState(null)
 
+  // Derive location from drawn polygon centroid or site analysis result
+  const parcelLocation = result?.elevation?.center_lat
+    ? `${result.elevation.center_lat.toFixed(4)}, ${result.elevation.center_lon.toFixed(4)}`
+    : polygon?.coordinates?.[0]
+      ? (() => {
+          const pts = polygon.coordinates[0]
+          const lat = pts.reduce((s, p) => s + p[1], 0) / pts.length
+          const lon = pts.reduce((s, p) => s + p[0], 0) / pts.length
+          return `${lat.toFixed(4)}, ${lon.toFixed(4)}`
+        })()
+      : ''
+  const parcelReady = !!polygon
+
   const handleSearch = () => {
     if (address.trim()) {
       setSearchError(null)
@@ -211,12 +224,12 @@ export default function App() {
 
       {/* ── House Concept tab ── */}
       <div className={`flex-1 overflow-y-auto ${activeTab !== 'house' ? 'hidden' : ''}`}>
-        <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setHouseResult} />
+        <HouseConceptPanel address={parcelLocation || address} parcelReady={parcelReady} siteData={result} onResult={setHouseResult} />
       </div>
 
       {/* ── Price Forecast tab ── */}
       <div className={`flex-1 overflow-y-auto ${activeTab !== 'forecast' ? 'hidden' : ''}`}>
-        <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setForecastResult} />
+        <PriceForecastPanel address={parcelLocation || address} parcelReady={parcelReady} siteData={result} onResult={setForecastResult} />
       </div>
 
       {/* ── Engineering Q&A tab ── */}

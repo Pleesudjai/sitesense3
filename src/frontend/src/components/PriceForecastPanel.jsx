@@ -63,7 +63,7 @@ const INDICATOR_EXPLAIN = {
   },
 }
 
-export default function PriceForecastPanel({ address, onAddressChange, siteData, onResult }) {
+export default function PriceForecastPanel({ address, parcelReady, siteData, onResult }) {
   const [bedrooms, setBedrooms]   = useState(2)
   const [bathrooms, setBathrooms] = useState(2)
   const [stories, setStories]     = useState(1)
@@ -141,15 +141,16 @@ export default function PriceForecastPanel({ address, onAddressChange, siteData,
               {QUALITY_OPTIONS.map(q => <option key={q.value} value={q.value}>{q.label} — ${q.rate}/SF</option>)}
             </select>
           </label>
-          {address && (
-            <div className="text-xs text-gray-400 flex items-end pb-1">
-              <span>Location: <span className="text-white font-medium">{address}</span></span>
-            </div>
-          )}
+          <div className="text-xs text-gray-400 flex items-end pb-1">
+            {parcelReady
+              ? <span>Parcel location: <span className="text-white font-medium">{address}</span></span>
+              : <span className="text-amber-400">Draw a rectangle on the Site Analysis map to set location</span>
+            }
+          </div>
         </div>
-        <button type="submit" disabled={loading || !address?.trim()}
+        <button type="submit" disabled={loading || !parcelReady}
           className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5 transition-colors">
-          {loading ? 'Forecasting...' : !address?.trim() ? 'Enter an address in the search bar first' : 'Run Price Forecast'}
+          {loading ? 'Forecasting...' : !parcelReady ? 'Draw a parcel on the Site Analysis map first' : 'Run Price Forecast'}
         </button>
       </form>
 
