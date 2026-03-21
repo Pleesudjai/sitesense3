@@ -112,6 +112,25 @@ netlify dev
 # Functions run at port 9000 — Vite proxies /api there automatically
 ```
 
+## Switching Laptops
+
+`localhost` only works on the machine running the server. When switching laptops:
+
+**Option 1: Use the live Netlify site (easiest — no credits for viewing)**
+- Open https://ornate-marigold-192751.netlify.app — works on any machine, no setup
+- Netlify build credits only apply when you *push code* (rebuild), not when viewing
+
+**Option 2: Run local dev on the new laptop**
+```bash
+cd "C:\Users\...\ASU Dropbox\Mobasher_Group\Hackathon ASU 2025"
+netlify dev
+```
+Then open whatever port Vite picks (5173/5175/5176). Dropbox will have synced all code already.
+
+**Recommendation:** Use the live Netlify URL for testing. Only run `netlify dev` locally when actively editing code.
+
+---
+
 ## How to Resume on Any Machine
 
 1. Open project in VS Code: `C:\Users\chidc\ASU Dropbox\Mobasher_Group\Hackathon ASU 2025`
