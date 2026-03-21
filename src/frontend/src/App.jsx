@@ -7,9 +7,10 @@ import CostTable from './components/CostTable'
 import ReportButton from './components/ReportButton'
 import HouseConceptPanel from './components/HouseConceptPanel'
 import EngineeringAssistant from './components/EngineeringAssistant'
+import PriceForecastPanel from './components/PriceForecastPanel'
 import { analyzeParcel } from './api'
 
-const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', engineering: 'Engineering Q&A' }
+const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', forecast: 'Price Forecast', engineering: 'Engineering Q&A' }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('site')
@@ -210,6 +211,13 @@ export default function App() {
       {activeTab === 'house' && (
         <div className="flex-1 overflow-y-auto">
           <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} />
+        </div>
+      )}
+
+      {/* ── Price Forecast tab ── */}
+      {activeTab === 'forecast' && (
+        <div className="flex-1 overflow-y-auto">
+          <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} />
         </div>
       )}
 

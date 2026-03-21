@@ -29,6 +29,9 @@
 [functions."engineering_assist"]
   timeout = 26
 
+[functions."price_predict"]
+  timeout = 26
+
 # Proxy /api/analyze → Netlify Function
 [[redirects]]
   from   = "/api/analyze"
@@ -54,6 +57,13 @@
 [[redirects]]
   from   = "/api/engineering_assist"
   to     = "/.netlify/functions/engineering_assist"
+  status = 200
+  force  = true
+
+# Proxy /api/price_predict → Netlify Function
+[[redirects]]
+  from   = "/api/price_predict"
+  to     = "/.netlify/functions/price_predict"
   status = 200
   force  = true
 

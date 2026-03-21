@@ -421,6 +421,23 @@ export async function estimateHouseConcept(params) {
  * @param {string} question
  * @param {Object|null} context - optional site analysis data for grounding
  */
+/**
+ * Predict construction cost with multi-factor government indicators.
+ * @param {Object} params - { bedrooms, bathrooms, stories, totalSF, quality, location, foundationType }
+ */
+export async function predictPrice(params) {
+  const response = await fetch(`${BASE_URL}/price_predict`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.message || `Price prediction failed: ${response.status}`)
+  }
+  return response.json()
+}
+
 export async function askEngineering(question, context = null) {
   const response = await fetch(`${BASE_URL}/engineering_assist`, {
     method: 'POST',
