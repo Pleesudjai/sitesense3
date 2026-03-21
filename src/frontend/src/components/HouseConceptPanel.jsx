@@ -106,17 +106,12 @@ export default function HouseConceptPanel({ address, onAddressChange, siteData, 
             </select>
           </label>
 
-          {/* Location */}
-          <label className="text-xs text-gray-400 col-span-2 sm:col-span-2">
-            Location
-            <input
-              type="text"
-              value={address || ''}
-              onChange={e => onAddressChange?.(e.target.value)}
-              placeholder="City, State or address"
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-teal"
-            />
-          </label>
+          {/* Location from header */}
+          {address && (
+            <div className="text-xs text-gray-400 col-span-2 sm:col-span-2 flex items-end pb-1">
+              <span>Location: <span className="text-white font-medium">{address}</span></span>
+            </div>
+          )}
         </div>
 
         {/* Site data toggle */}
