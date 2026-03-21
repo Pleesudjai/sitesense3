@@ -1,15 +1,41 @@
 import { useEffect, useRef } from 'react'
-import mapboxgl from 'mapbox-gl'
+import maplibregl from 'maplibre-gl'
 import MapboxDraw from '@mapbox/mapbox-gl-draw'
 import * as turf from '@turf/area'
 
-// Set your Mapbox token in .env.local as VITE_MAPBOX_TOKEN
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'YOUR_MAPBOX_TOKEN_HERE'
+// Free Esri World Imagery satellite style — no token required
+const ESRI_SATELLITE_STYLE = {
+  version: 8,
+  sources: {
+    'esri-satellite': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      attribution: '© Esri, Maxar, Earthstar Geographics',
+      maxzoom: 19,
+    },
+    'esri-labels': {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+    },
+  },
+  layers: [
+    { id: 'satellite', type: 'raster', source: 'esri-satellite' },
+    { id: 'labels',    type: 'raster', source: 'esri-labels' },
+  ],
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+}
 
 /**
  * MapView — Satellite map with polygon drawing tool.
+ * Uses MapLibre GL JS (no token) + Esri World Imagery (free satellite).
  * Calls onPolygonChange(GeoJSON_geometry) when user draws/updates a polygon.
- * Shows elevation slope heatmap and cut/fill overlay when result is available.
  */
 export default function MapView({ onPolygonChange, result }) {
   const mapContainer = useRef(null)
@@ -19,17 +45,17 @@ export default function MapView({ onPolygonChange, result }) {
   useEffect(() => {
     if (map.current) return  // already initialized
 
-    map.current = new mapboxgl.Map({
+    map.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/satellite-streets-v12',
+      style: ESRI_SATELLITE_STYLE,
       center: [-112.07, 33.45],  // Phoenix AZ default
       zoom: 14,
     })
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-left')
-    map.current.addControl(new mapboxgl.ScaleControl({ unit: 'imperial' }), 'bottom-left')
+    map.current.addControl(new maplibregl.NavigationControl(), 'top-left')
+    map.current.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left')
 
-    // Polygon draw tool
+    // Polygon draw tool (uses mapbox-gl-draw aliased to maplibre-gl)
     draw.current = new MapboxDraw({
       displayControlsDefault: false,
       controls: { polygon: true, trash: true },
@@ -55,7 +81,7 @@ export default function MapView({ onPolygonChange, result }) {
       const data = draw.current.getAll()
       if (data.features.length > 0) {
         const geom = data.features[0].geometry
-        const area = turf.default(data.features[0]) / 4047  // m² → acres
+        turf.default(data.features[0])  // compute area (acres) if needed
         onPolygonChange(geom)
       } else {
         onPolygonChange(null)
@@ -69,36 +95,24 @@ export default function MapView({ onPolygonChange, result }) {
     return () => map.current?.remove()
   }, [])
 
-  // Add slope heatmap layer when result changes
+  // Add result marker when analysis is ready
   useEffect(() => {
-    if (!map.current || !result?.slope?.slope_grid) return
+    if (!map.current || !result?.elevation?.bbox) return
 
-    // Remove existing layers
-    ['slope-heatmap', 'cut-overlay', 'fill-overlay'].forEach(id => {
-      if (map.current.getLayer(id)) map.current.removeLayer(id)
-      if (map.current.getSource(id)) map.current.removeSource(id)
-    })
-
-    // For hackathon: show a simple indicator on map center when data is ready
-    // Full raster overlay requires tile server — this is MVP approach
-    const bbox = result.elevation?.bbox
-    if (!bbox) return
-
+    const bbox = result.elevation.bbox
     const center = [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
 
-    // Add a result marker
     const el = document.createElement('div')
-    el.className = 'result-marker'
     el.style.cssText = `
       width: 14px; height: 14px; border-radius: 50%;
       background: #02C39A; border: 2px solid white;
-      box-shadow: 0 0 8px rgba(2,195,154,0.6);
+      box-shadow: 0 0 8px rgba(2,195,154,0.6); cursor: pointer;
     `
 
-    new mapboxgl.Marker(el)
+    new maplibregl.Marker(el)
       .setLngLat(center)
-      .setPopup(new mapboxgl.Popup().setHTML(
-        `<div style="font-size:12px; color:#000">
+      .setPopup(new maplibregl.Popup().setHTML(
+        `<div style="font-size:12px; color:#000; line-height:1.6">
           <b>Analysis Complete</b><br/>
           Slope: ${result.slope?.avg_slope_pct?.toFixed(1)}%<br/>
           Flood: Zone ${result.flood?.zone}<br/>

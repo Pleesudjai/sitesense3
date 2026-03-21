@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Mapbox overrides */
-.mapboxgl-canvas {
+/* MapLibre overrides */
+.maplibregl-canvas {
   border-radius: 0;
 }
 
