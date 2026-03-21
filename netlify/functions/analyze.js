@@ -77,7 +77,7 @@ async function queryElevation(lon, lat) {
   }
 }
 
-async function getElevationGrid(polygon, gridSize = 10) {
+async function getElevationGrid(polygon, gridSize = 6) {
   const [minX, minY, maxX, maxY] = polygonBounds(polygon.coordinates)
   const buf = 100 / 111000
   const bMinX = minX - buf, bMinY = minY - buf
@@ -196,7 +196,7 @@ async function getFloodZone(polygon) {
   })
   try {
     const res = await fetch(`https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query?${params}`,
-      { signal: AbortSignal.timeout(12000) })
+      { signal: AbortSignal.timeout(8000) })
     const data = await res.json()
     const features = data.features || []
     if (!features.length) return defaultFlood()
@@ -311,7 +311,7 @@ async function getSoilData(polygon) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `query=${encodeURIComponent(sdaQuery)}&format=JSON`,
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(8000),
     })
     const sdaJson = await sdaRes.json()
     if (sdaJson.Table && sdaJson.Table.length > 0) {
@@ -490,7 +490,7 @@ async function _soilZonesViaPolygonKeys(minX, minY, maxX, maxY, buf) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `query=${encodeURIComponent(keyQuery)}&format=JSON`,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(8000),
     })
     if (!keyRes.ok) return null
     const keyData = await keyRes.json()
@@ -519,7 +519,7 @@ async function _soilZonesViaPolygonKeys(minX, minY, maxX, maxY, buf) {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `query=${encodeURIComponent(geomQuery)}&format=JSON`,
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(8000),
     })
     if (!geomRes.ok) return null
     const geomData = await geomRes.json()
@@ -656,7 +656,7 @@ async function getSeismicData(polygon) {
   try {
     const params = new URLSearchParams({ latitude: cy, longitude: cx, riskCategory: 'II', siteClass: 'D', title: 'SiteSense' })
     const res = await fetch(`https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
-      { signal: AbortSignal.timeout(15000) })
+      { signal: AbortSignal.timeout(8000) })
     const data = await res.json()
     const design = data?.response?.data?.design || {}
     const mapped = data?.response?.data?.mapped || {}
@@ -706,7 +706,7 @@ async function getWetlands(polygon) {
   const params = new URLSearchParams({ geometry: envelope, geometryType: 'esriGeometryEnvelope', inSR: '4326', spatialRel: 'esriSpatialRelIntersects', outFields: 'WETLAND_TYPE,ACRES', returnGeometry: 'false', f: 'json' })
   try {
     const res = await fetch(`https://www.fws.gov/wetlands/arcgis/rest/services/Wetlands/MapServer/0/query?${params}`,
-      { signal: AbortSignal.timeout(12000) })
+      { signal: AbortSignal.timeout(8000) })
     const data = await res.json()
     const features = data.features || []
     if (!features.length) return { present: false, wetland_types: [], coverage_pct: 0, description: 'No wetlands detected.' }
@@ -870,7 +870,7 @@ async function getPrecipitation(polygon) {
   try {
     const res = await fetch(
       `https://hdsc.nws.noaa.gov/cgi-bin/hdsc/new/cgi_readH5.py?lat=${cy}&lon=${cx}&type=pf&data=depth&units=english&series=pds`,
-      { signal: AbortSignal.timeout(12000) }
+      { signal: AbortSignal.timeout(8000) }
     )
     const text = await res.text()
     // Parse the NOAA response — returns precipitation depths for various durations/frequencies
@@ -925,7 +925,7 @@ async function getContamination(polygon) {
   try {
     const res = await fetch(
       `https://enviro.epa.gov/enviro/efservice/getEnvFacts/LATITUDE/${cy}/LONGITUDE/${cx}/RADIUS/${radiusMiles}/JSON`,
-      { signal: AbortSignal.timeout(12000) }
+      { signal: AbortSignal.timeout(8000) }
     )
 
     if (!res.ok) {
@@ -1020,7 +1020,7 @@ async function getHydrography(polygon) {
   try {
     const res = await fetch(
       `https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6/query?${params}`,
-      { signal: AbortSignal.timeout(12000) }
+      { signal: AbortSignal.timeout(8000) }
     )
     const data = await res.json()
     const features = data.features || []
