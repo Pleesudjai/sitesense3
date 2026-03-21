@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import { estimateHouseConcept } from '../api'
+import FloorPlanView from './FloorPlanView'
 import ProfessionalDisclaimer from './ProfessionalDisclaimer'
 
 const QUALITY_OPTIONS = [
@@ -197,6 +198,12 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
               </div>
             </>
           )}
+
+          {/* Floor plan for recommended layout */}
+          {result.layouts && (() => {
+            const best = result.layouts.reduce((a, b) => (b.score >= a.score ? b : a), result.layouts[0])
+            return <FloorPlanView layout={best} />
+          })()}
 
           {/* Structural notes */}
           {result.structuralNotes?.length > 0 && (
