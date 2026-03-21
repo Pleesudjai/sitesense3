@@ -2,7 +2,7 @@
   package = "@netlify/plugin-functions-install-core"
 
 [dev]
-  command    = "cd src/frontend && npm run dev"
+  command    = "npm --prefix src/frontend run dev"
   targetPort = 5173
   port       = 9000
 
