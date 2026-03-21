@@ -1,0 +1,23 @@
+1. Heat-resilient pavement and concrete selector
+Phoenix has made cool pavement a permanent program and reports summer surface reductions up to 12°F, while ADOT’s current five-year program still centers heavily on preserving and rehabilitating pavement and bridges. Build a tool that takes site, traffic level, orientation, material options, and maintenance constraints, then recommends pavement or surface-treatment choices with a heat/maintenance tradeoff report. This fits your materials background directly. A hackathon MVP is a web app with a small decision engine plus a map-based demo.
+
+2. Foundation-risk scanner for Arizona homes
+Arizona Geological Survey flags expansive soils as a cause of foundation cracks, slab heave, ruptured pipelines, and sidewalk/road cracking, and notes that wetting-drying cycles around foundations are a major driver. Build a homeowner or inspector tool that combines soil/geology layers, irrigation-leak inputs, crack photos, and simple structural logic to flag likely expansive-soil or moisture-related movement. This is close to the consulting and site-observation work you already do.
+
+3. Earth-fissure and subsidence risk map for infrastructure
+AZGS states that earth fissures in Arizona threaten roads, gas lines, canals, homes, and other infrastructure, with damage extending across expanding parts of the Phoenix area. Build a map-first risk platform that overlays known fissure zones with roads, canals, utilities, parcels, or future project sites, then generates a screening memo and inspection priority. This is a clean Arizona-specific infrastructure product, not a generic AI app.
+
+4. Monsoon flood plus roadway-failure hotspot predictor
+Phoenix is updating its floodplain management plan, and Maricopa County’s Flood Control District says flooding can happen within minutes and now runs a 430-station ALERT network for rain, water level, and weather. Build a tool that ingests live or sample rainfall and drainage data, then flags likely street-flooding or culvert/roadway distress hotspots for public works. Your mechanics background gives you credibility on runoff-to-damage logic instead of building a shallow weather dashboard.
+
+5. Water-leak to structural-risk triage
+Phoenix and Tempe both run public reporting paths for leaks, main breaks, and water waste, and Tempe explicitly points to aging infrastructure, line inspections, and waterline-break reduction as active concerns. Build a triage layer that takes a leak report, location, soil type, structure type, and duration estimate, then ranks the risk of slab movement, subgrade softening, erosion, or adjacent asset damage. This is a strong crossover between civil infrastructure and AI.
+
+6. Bridge and pavement rehab copilot for local agencies
+ADOT’s 2026–2030 program allocates $2.4 billion over five years to preserve, rehabilitate, and replace pavement and bridges, and its asset management plan covers more than 5,000 bridges statewide. Build an explainable copilot that converts inspection notes, photos, and condition data into rehab options, urgency ranking, and draft maintenance memos. This suits your technical writing plus structural reasoning better than a generic asset dashboard.
+
+7. Heat-safe construction scheduling and curing assistant
+Arizona’s heat plan describes a sustained and growing health burden from extreme heat, with nearly 3,000 heat-related ER visits per year and record heat deaths in 2022, while ADOT’s resilience work identifies heat-related worker safety issues and shorter construction windows as direct transportation impacts. Build a planner that tells contractors when to pour, cure, inspect, or stage work under heat constraints, with alerts for worker exposure and material-performance penalties. That is a real field problem in Arizona, not a toy project.
+
+8. Structural-materials test interpreter for Arizona public works
+This is the closest to your SMC Labs concept. Make one narrow brain: upload a beam test, stress-strain file, or spec sheet, and the system extracts key points, classifies behavior, suggests a constitutive model family, and drafts a short engineering interpretation. It maps well to Arizona’s ongoing pavement, bridge, and water-infrastructure work because agencies and consultants constantly deal with reports, tests, and condition data. 

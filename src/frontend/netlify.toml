@@ -1,0 +1,21 @@
+[build]
+  command   = "npm run build"
+  publish   = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA routing — all paths go to index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Proxy /api/* to Render backend (avoids CORS issues)
+# Replace the :splat URL with your Render backend URL after deploy
+[[redirects]]
+  from   = "/api/*"
+  to     = "https://sitesense-api.onrender.com/:splat"
+  status = 200
+  force  = true
+  headers = { X-From = "Netlify" }

@@ -1,0 +1,21 @@
+[build]
+  base    = "src/frontend"
+  command = "npm run build"
+  publish = "src/frontend/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA routing — all paths serve index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Proxy API calls to Render backend (no CORS issues, no exposed backend URL)
+# After deploying backend on Render, update the URL below
+[[redirects]]
+  from   = "/api/*"
+  to     = "https://sitesense-api.onrender.com/:splat"
+  status = 200
+  force  = true
