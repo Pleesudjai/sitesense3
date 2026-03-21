@@ -5,9 +5,14 @@ import ElevationChart from './components/ElevationChart'
 import CutFillVisual from './components/CutFillVisual'
 import CostTable from './components/CostTable'
 import ReportButton from './components/ReportButton'
+import HouseConceptPanel from './components/HouseConceptPanel'
+import EngineeringAssistant from './components/EngineeringAssistant'
 import { analyzeParcel } from './api'
 
+const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', engineering: 'Engineering Q&A' }
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState('site')
   const [polygon, setPolygon] = useState(null)
   const [address, setAddress] = useState('')
   const [searchTrigger, setSearchTrigger] = useState(0)
@@ -102,8 +107,21 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Main layout ── */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* ── Tab bar ── */}
+      <div className="flex gap-0 bg-gray-900 border-b border-gray-700 px-6 shrink-0">
+        {Object.entries(TAB_LABELS).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className={`px-5 py-2 text-sm font-medium transition-colors ${
+              activeTab === key
+                ? 'text-teal border-b-2 border-teal'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >{label}</button>
+        ))}
+      </div>
+
+      {/* ── Site Analysis tab ── */}
+      <div className={`flex flex-1 overflow-hidden ${activeTab !== 'site' ? 'hidden' : ''}`}>
         {/* Map — left 60% */}
         <div className="w-3/5 relative">
           <MapView
@@ -187,6 +205,20 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {/* ── House Concept tab ── */}
+      {activeTab === 'house' && (
+        <div className="flex-1 overflow-y-auto">
+          <HouseConceptPanel address={address} siteData={result} />
+        </div>
+      )}
+
+      {/* ── Engineering Q&A tab ── */}
+      {activeTab === 'engineering' && (
+        <div className="flex-1 overflow-y-auto">
+          <EngineeringAssistant siteData={result} />
+        </div>
+      )}
     </div>
   )
 }

@@ -23,6 +23,12 @@
 [functions."report"]
   timeout = 26
 
+[functions."house_estimate"]
+  timeout = 26
+
+[functions."engineering_assist"]
+  timeout = 26
+
 # Proxy /api/analyze → Netlify Function
 [[redirects]]
   from   = "/api/analyze"
@@ -34,6 +40,20 @@
 [[redirects]]
   from   = "/api/report"
   to     = "/.netlify/functions/report"
+  status = 200
+  force  = true
+
+# Proxy /api/house_estimate → Netlify Function
+[[redirects]]
+  from   = "/api/house_estimate"
+  to     = "/.netlify/functions/house_estimate"
+  status = 200
+  force  = true
+
+# Proxy /api/engineering_assist → Netlify Function
+[[redirects]]
+  from   = "/api/engineering_assist"
+  to     = "/.netlify/functions/engineering_assist"
   status = 200
   force  = true
 

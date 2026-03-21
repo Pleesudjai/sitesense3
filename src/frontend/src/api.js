@@ -398,3 +398,38 @@ export async function downloadReport(polygon, prefs = {}) {
   a.click()
   window.URL.revokeObjectURL(url)
 }
+
+/**
+ * Generate house concept estimates.
+ * @param {Object} params - { bedrooms, bathrooms, stories, location, quality, siteData? }
+ */
+export async function estimateHouseConcept(params) {
+  const response = await fetch(`${BASE_URL}/house_estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.message || `House estimate failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+/**
+ * Ask an engineering question with source attribution.
+ * @param {string} question
+ * @param {Object|null} context - optional site analysis data for grounding
+ */
+export async function askEngineering(question, context = null) {
+  const response = await fetch(`${BASE_URL}/engineering_assist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, context }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.message || `Engineering assist failed: ${response.status}`)
+  }
+  return response.json()
+}
