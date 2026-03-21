@@ -63,7 +63,7 @@ export default function MapView({ onPolygonChange, onSearchError, result, search
     draw.current = new MapboxDraw({
       displayControlsDefault: false,
       controls: { polygon: true, trash: true },
-      defaultMode: 'draw_polygon',  // auto-start in draw mode
+      defaultMode: 'simple_select',
       styles: [
         {
           id: 'gl-draw-polygon-fill',
@@ -72,38 +72,19 @@ export default function MapView({ onPolygonChange, onSearchError, result, search
           paint: { 'fill-color': '#1C7293', 'fill-opacity': 0.25 },
         },
         {
-          id: 'gl-draw-polygon-fill-active',
-          type: 'fill',
-          filter: ['all', ['==', '$type', 'Polygon'], ['==', 'active', 'true']],
-          paint: { 'fill-color': '#02C39A', 'fill-opacity': 0.3 },
-        },
-        {
           id: 'gl-draw-polygon-stroke',
           type: 'line',
           filter: ['all', ['==', '$type', 'Polygon']],
-          paint: { 'line-color': '#02C39A', 'line-width': 2.5 },
-        },
-        {
-          id: 'gl-draw-polygon-stroke-active',
-          type: 'line',
-          filter: ['all', ['==', '$type', 'Polygon'], ['==', 'active', 'true']],
-          paint: { 'line-color': '#02C39A', 'line-width': 2.5, 'line-dasharray': [4, 2] },
-        },
-        {
-          id: 'gl-draw-vertex',
-          type: 'circle',
-          filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'vertex']],
-          paint: { 'circle-radius': 5, 'circle-color': '#02C39A', 'circle-stroke-width': 2, 'circle-stroke-color': '#fff' },
-        },
-        {
-          id: 'gl-draw-midpoint',
-          type: 'circle',
-          filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
-          paint: { 'circle-radius': 3, 'circle-color': '#fff', 'circle-stroke-width': 1, 'circle-stroke-color': '#02C39A' },
+          paint: { 'line-color': '#02C39A', 'line-width': 2 },
         },
       ],
     })
     map.current.addControl(draw.current, 'top-left')
+
+    // Enter draw mode only AFTER map fully loads
+    map.current.on('load', () => {
+      draw.current.changeMode('draw_polygon')
+    })
 
     const handleCreate = () => {
       const data = draw.current.getAll()
