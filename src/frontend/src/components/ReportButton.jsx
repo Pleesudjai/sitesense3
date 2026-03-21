@@ -4,10 +4,10 @@ import { generateReport } from './ReportGenerator'
  * ReportButton — Opens a styled HTML report in a new browser tab.
  * User prints to PDF via Ctrl+P. No server round-trip needed.
  */
-export default function ReportButton({ polygon, prefs, result }) {
+export default function ReportButton({ polygon, prefs, result, houseResult, forecastResult }) {
   const handleDownload = () => {
     if (!result) return
-    generateReport(result, prefs?.address || '', polygon)
+    generateReport(result, prefs?.address || '', polygon, houseResult, forecastResult)
   }
 
   return (

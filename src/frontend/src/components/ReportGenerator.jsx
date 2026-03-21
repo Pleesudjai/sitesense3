@@ -56,7 +56,7 @@ function topRisks(result) {
   return items.slice(0, 3)
 }
 
-function buildReportHTML(result, address) {
+function buildReportHTML(result, address, houseResult, forecastResult) {
   const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const verdict = getVerdict(result)
   const acres = fmt(result.elevation?.area_acres, 2)
@@ -335,6 +335,120 @@ function buildReportHTML(result, address) {
     </div>
   `
 
+  // ── Page 5: House Concept (if available) ──
+  const page5 = !houseResult ? '' : `
+    <div class="page">
+      <div class="header"><h1>House Concept Estimate</h1><span>${now}</span></div>
+      <p style="color:#94a3b8;margin-bottom:16px;">Location: ${houseResult.location?.query || address} · Quality: ${(houseResult.quality || 'mid').charAt(0).toUpperCase() + (houseResult.quality || 'mid').slice(1)} · Foundation: ${(houseResult.foundationType || 'CONVENTIONAL_SLAB').replace(/_/g, ' ')}</p>
+
+      <h2>Layout Options</h2>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+        ${(houseResult.layouts || []).map(l => {
+          const isBest = (houseResult.layouts || []).every(o => l.score >= o.score)
+          const costLow = l.cost?.range?.low ?? 0
+          const costHigh = l.cost?.range?.high ?? 0
+          const rooms = Array.isArray(l.rooms) ? l.rooms.map(r => r.name || r).join(', ') : ''
+          return `<div class="card" style="${isBest ? 'border-color:#02C39A;' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${l.name}</strong>
+              ${isBest ? '<span style="background:#02C39A22;color:#02C39A;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;">Recommended</span>' : ''}
+            </div>
+            <p style="font-size:18px;font-weight:700;color:#02C39A;margin:6px 0;">${money(costLow)} – ${money(costHigh)}</p>
+            <p style="font-size:12px;color:#94a3b8;">${fmtInt(l.totalSF || 0)} SF · ${l.structuralSystem || 'Wood frame'}</p>
+            <p style="font-size:11px;color:#64748b;margin-top:4px;">${rooms}</p>
+            <p style="font-size:11px;color:#94a3b8;margin-top:4px;">Score: <strong>${l.score}/100</strong></p>
+          </div>`
+        }).join('')}
+      </div>
+
+      ${(houseResult.structuralNotes || []).length > 0 ? `
+        <h2>Structural Notes</h2>
+        <ul style="font-size:13px;color:#cbd5e1;padding-left:18px;">
+          ${houseResult.structuralNotes.map(n => `<li style="margin-bottom:4px;">${n}</li>`).join('')}
+        </ul>
+      ` : ''}
+
+      ${houseResult.aiSummary ? `
+        <h2>AI Summary</h2>
+        <div class="card" style="white-space:pre-wrap;font-size:13px;color:#cbd5e1;line-height:1.6;">${houseResult.aiSummary}</div>
+      ` : ''}
+
+      <div class="disclaimer">This is a preliminary concept estimate only. Actual costs require a licensed contractor bid and site-specific engineering.</div>
+    </div>
+  `
+
+  // ── Page 6: Price Forecast (if available) ──
+  const page6 = !forecastResult ? '' : `
+    <div class="page">
+      <div class="header"><h1>Construction Cost Forecast</h1><span>${now}</span></div>
+      <p style="color:#94a3b8;margin-bottom:16px;">Location: ${forecastResult.location?.query || address} · ${forecastResult.location?.state || 'US'}</p>
+
+      <div class="card" style="text-align:center;margin-bottom:20px;">
+        <p style="color:#94a3b8;font-size:12px;">Current Construction Cost Estimate</p>
+        <p style="font-size:32px;font-weight:800;color:#02C39A;margin:8px 0;">${money(forecastResult.currentEstimate?.expected)}</p>
+        <p style="color:#94a3b8;font-size:14px;">${money(forecastResult.currentEstimate?.low)} — ${money(forecastResult.currentEstimate?.high)}</p>
+        <p style="color:#64748b;font-size:12px;margin-top:4px;">$${forecastResult.currentEstimate?.perSF || '—'}/SF</p>
+      </div>
+
+      <h2>Cost Forecast Timeline</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
+        <thead><tr style="border-bottom:2px solid #374151;color:#94a3b8;">
+          <th style="text-align:left;padding:8px 4px;">Horizon</th>
+          <th style="text-align:right;padding:8px 4px;">Low</th>
+          <th style="text-align:right;padding:8px 4px;">Expected</th>
+          <th style="text-align:right;padding:8px 4px;">High</th>
+          <th style="text-align:right;padding:8px 4px;">Change</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #1f2937;">
+            <td style="padding:6px 4px;font-weight:600;">Now</td>
+            <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(forecastResult.currentEstimate?.low)}</td>
+            <td style="text-align:right;padding:6px 4px;color:#02C39A;font-weight:600;">${money(forecastResult.currentEstimate?.expected)}</td>
+            <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(forecastResult.currentEstimate?.high)}</td>
+            <td style="text-align:right;padding:6px 4px;color:#64748b;">—</td>
+          </tr>
+          ${(forecastResult.forecasts || []).map(f => {
+            const pctChange = ((f.expected / forecastResult.currentEstimate.expected - 1) * 100).toFixed(1)
+            return `<tr style="border-bottom:1px solid #1f2937;">
+              <td style="padding:6px 4px;font-weight:600;">Year ${f.year}</td>
+              <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(f.low)}</td>
+              <td style="text-align:right;padding:6px 4px;color:#02C39A;font-weight:600;">${money(f.expected)}</td>
+              <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(f.high)}</td>
+              <td style="text-align:right;padding:6px 4px;color:#f59e0b;">+${pctChange}%</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+
+      ${forecastResult.indicators ? `
+        <h2>What's Driving This Forecast</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+          ${Object.entries(forecastResult.indicators).map(([k, ind]) => `
+            <div class="card" style="padding:10px;">
+              <span style="display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#1e3a5f;color:#7dd3fc;">${ind.contribution}</span>
+              <p style="font-size:14px;font-weight:600;margin:4px 0;">
+                ${ind.rate != null ? (ind.rate * 100).toFixed(1) + '%' : ''}
+                ${ind.value != null ? ind.value.toFixed(2) + 'x' : ''}
+                ${ind.mortgage_rate != null ? ind.mortgage_rate + '% rate · ' + ind.market_temp : ''}
+              </p>
+              <p style="font-size:11px;color:#64748b;">${ind.source}</p>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      ${forecastResult.sources ? `
+        <h2 style="font-size:13px;">Government Data Sources</h2>
+        <ul style="font-size:11px;color:#64748b;padding-left:18px;">
+          ${forecastResult.sources.map(s => `<li>${s}</li>`).join('')}
+        </ul>
+        <p style="font-size:11px;color:#475569;font-style:italic;margin-top:8px;">${forecastResult.methodology || ''}</p>
+      ` : ''}
+
+      <div class="disclaimer">This forecast uses government economic indicators for concept-level decision support only. It is not a contractor bid, appraisal, or lender-grade estimate.</div>
+    </div>
+  `
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -347,13 +461,15 @@ function buildReportHTML(result, address) {
   ${page1}
   ${page2}
   ${page3}
+  ${page5}
+  ${page6}
   ${page4}
 </body>
 </html>`
 }
 
-export function generateReport(result, address, polygon) {
-  const html = buildReportHTML(result, address)
+export function generateReport(result, address, polygon, houseResult, forecastResult) {
+  const html = buildReportHTML(result, address, houseResult, forecastResult)
   const win = window.open('', '_blank')
   if (!win) {
     alert('Pop-up blocked. Please allow pop-ups for this site and try again.')

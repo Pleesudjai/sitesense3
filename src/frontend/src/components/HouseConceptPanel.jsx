@@ -14,7 +14,7 @@ const QUALITY_OPTIONS = [
   { value: 'luxury',   label: 'Luxury',    rate: 350 },
 ]
 
-export default function HouseConceptPanel({ address, onAddressChange, siteData }) {
+export default function HouseConceptPanel({ address, onAddressChange, siteData, onResult }) {
   const [bedrooms, setBedrooms]     = useState(2)
   const [bathrooms, setBathrooms]   = useState(2)
   const [stories, setStories]       = useState(1)
@@ -39,6 +39,7 @@ export default function HouseConceptPanel({ address, onAddressChange, siteData }
       }
       const res = await estimateHouseConcept(params)
       setResult(res.data)
+      onResult?.(res.data)
     } catch (err) {
       setError(err.message || 'House concept generation failed')
     } finally {

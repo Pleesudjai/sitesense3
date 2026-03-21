@@ -26,6 +26,8 @@ export default function App() {
     budget: 'mid',
   })
   const [searchError, setSearchError] = useState(null)
+  const [houseResult, setHouseResult] = useState(null)
+  const [forecastResult, setForecastResult] = useState(null)
 
   const handleSearch = () => {
     if (address.trim()) {
@@ -191,7 +193,7 @@ export default function App() {
               <ElevationChart grid={result.elevation?.grid} bbox={result.elevation?.bbox} polygon={polygon} soilZones={result.soil_zones} />
               <CutFillVisual cutFill={result.cut_fill} />
               <CostTable costs={result.costs} />
-              <ReportButton polygon={polygon} prefs={{ ...prefs, address }} result={result} />
+              <ReportButton polygon={polygon} prefs={{ ...prefs, address }} result={result} houseResult={houseResult} forecastResult={forecastResult} />
 
               {/* AI Report text */}
               {result.report_text && (
@@ -210,14 +212,14 @@ export default function App() {
       {/* ── House Concept tab ── */}
       {activeTab === 'house' && (
         <div className="flex-1 overflow-y-auto">
-          <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} />
+          <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setHouseResult} />
         </div>
       )}
 
       {/* ── Price Forecast tab ── */}
       {activeTab === 'forecast' && (
         <div className="flex-1 overflow-y-auto">
-          <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} />
+          <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setForecastResult} />
         </div>
       )}
 

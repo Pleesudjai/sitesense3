@@ -22,7 +22,7 @@ const CONTRIBUTION_COLORS = {
   context:   'bg-gray-700 text-gray-400',
 }
 
-export default function PriceForecastPanel({ address, onAddressChange, siteData }) {
+export default function PriceForecastPanel({ address, onAddressChange, siteData, onResult }) {
   const [bedrooms, setBedrooms]   = useState(2)
   const [bathrooms, setBathrooms] = useState(2)
   const [stories, setStories]     = useState(1)
@@ -44,6 +44,7 @@ export default function PriceForecastPanel({ address, onAddressChange, siteData 
       }
       const res = await predictPrice(params)
       setResult(res.data)
+      onResult?.(res.data)
     } catch (err) {
       setError(err.message)
     } finally {
