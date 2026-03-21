@@ -1,5 +1,5 @@
 [build]
-  command = "cd src/frontend && npm run build"
+  command = "cd src/frontend && npm install && npm run build"
   publish = "src/frontend/dist"
 
 [build.environment]
