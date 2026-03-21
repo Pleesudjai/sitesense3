@@ -3,9 +3,8 @@
  * Proxied through Vite dev server to http://localhost:8000
  */
 
-// In dev: Vite proxies /api → localhost:8000
-// In production (Netlify): VITE_API_URL points to Render backend URL
-const BASE_URL = import.meta.env.VITE_API_URL || '/api'
+// Backend is Netlify Functions — always use /api (proxied by netlify.toml)
+const BASE_URL = '/api'
 
 /**
  * Analyze a polygon parcel.
