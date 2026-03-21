@@ -1,21 +1,36 @@
 [build]
-  base    = "src/frontend"
-  command = "npm run build"
+  command = "cd src/frontend && npm run build"
   publish = "src/frontend/dist"
 
 [build.environment]
   NODE_VERSION = "20"
 
-# SPA routing — all paths serve index.html
+[functions]
+  directory = "netlify/functions"
+  included_files = ["src/backend/**"]
+
+[functions."analyze"]
+  timeout = 26
+
+[functions."report"]
+  timeout = 26
+
+# Proxy /api/analyze → Netlify Function
+[[redirects]]
+  from   = "/api/analyze"
+  to     = "/.netlify/functions/analyze"
+  status = 200
+  force  = true
+
+# Proxy /api/report → Netlify Function
+[[redirects]]
+  from   = "/api/report"
+  to     = "/.netlify/functions/report"
+  status = 200
+  force  = true
+
+# SPA routing — all other paths serve index.html
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
-
-# Proxy API calls to Render backend (no CORS issues, no exposed backend URL)
-# After deploying backend on Render, update the URL below
-[[redirects]]
-  from   = "/api/*"
-  to     = "https://sitesense-api.onrender.com/:splat"
-  status = 200
-  force  = true
