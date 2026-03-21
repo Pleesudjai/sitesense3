@@ -134,3 +134,19 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `CLAUDE.md` — added IBC 1806.2, ASTM D4829, AASHTO frost, collapsible soils, sulfate attack
 - `TODO.md` — handoff document for switching computers
 **Next:** Set ANTHROPIC_API_KEY in Netlify, end-to-end test with 3 demo addresses, verify soil zones render
+
+---
+
+## 2026-03-21 — House Concept Estimator + Engineering Q&A (Two New Features)
+**What was built:** Two new SiteSense workflows as tab-based UI. (1) House Concept Estimator: user inputs brief (beds/baths/stories/quality/location) → generates 3 candidate layouts (Compact/Standard/Spacious) with room programs, structural screen, ROM cost range ($low–$high), 10-year projection at 4.5% ENR inflation, and Claude AI summary. (2) Engineering Q&A: Claude-powered engineering assistant with curated system prompt containing IBC 2021/ASCE 7-22/ACI 350/360R reference tables, source attribution badges (PUBLIC/LICENSED/CALCULATED), and mandatory professional disclaimers. Both features auto-fetch GIS data (soil via SoilWeb, seismic via USGS, flood via FEMA) when given a location — fully standalone, no need to run Site Analysis first. Address shared across all 3 tabs.
+**Why this approach:** Separate Netlify Functions (JS) per feature keeps existing site analysis stable. No vector DB needed — Claude's system prompt with curated code tables achieves RAG-like behavior at zero infrastructure cost. Auto-GIS fetch makes each tab independently demo-able for judges. Rule-based layout generation (not AI) keeps concept estimator fast and deterministic; Claude only used for plain-English summary.
+**Files changed:**
+- `netlify/functions/house_estimate.js` — new: layout presets, room programs, cost engine, structural screen, GIS auto-fetch, Claude summary
+- `netlify/functions/engineering_assist.js` — new: curated system prompt, source attribution, GIS auto-fetch, geocoding
+- `src/frontend/src/components/HouseConceptPanel.jsx` — new: form + 3 layout cards + cost bars + AI summary
+- `src/frontend/src/components/EngineeringAssistant.jsx` — new: chat Q&A + source badges + suggested questions
+- `src/frontend/src/components/ProfessionalDisclaimer.jsx` — new: shared disclaimer
+- `src/frontend/src/App.jsx` — tab bar (Site Analysis | House Concept | Engineering Q&A), shared address state
+- `src/frontend/src/api.js` — estimateHouseConcept() + askEngineering()
+- `netlify.toml` — 2 new redirects + timeouts
+**Next:** Set ANTHROPIC_API_KEY for AI summaries, test all 3 tabs end-to-end, UI polish, pitch deck prep
