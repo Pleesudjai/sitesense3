@@ -177,27 +177,36 @@ function structuralScreen(layouts, siteData) {
     }
     if (siteData.soil) {
       const soil = siteData.soil
-      if (soil.shrinkSwell === 'high' || soil.shrinkSwell === 'critical') {
+      // Support both camelCase (auto-fetched) and snake_case (full analysis) field names
+      const sw = (soil.shrinkSwell || soil.shrink_swell || '').toLowerCase()
+      if (sw === 'high' || sw === 'critical') {
         notes.push('High shrink-swell soil detected — post-tensioned slab recommended (ACI 360R-10 §5.4)')
         if (foundationType === 'CONVENTIONAL_SLAB') foundationType = 'POST_TENSIONED_SLAB'
       }
       if (soil.caliche) {
         notes.push('Caliche hardpan detected — grade beams may be required (+$3-8/SF)')
       }
-      if (soil.type) {
-        notes.push(`Soil classification: ${soil.type}`)
+      const soilType = soil.type || soil.texture_class
+      if (soilType) {
+        notes.push(`Soil classification: ${soilType}`)
       }
     }
     if (siteData.loads) {
       const loads = siteData.loads
-      if (loads.seismicSdc && loads.seismicSdc >= 'D') {
-        notes.push(`Seismic Design Category ${loads.seismicSdc} — special detailing required (ASCE 7-22 Ch.12)`)
+      const sdc = loads.seismicSdc || loads.seismic_sdc
+      if (sdc && sdc >= 'D') {
+        notes.push(`Seismic Design Category ${sdc} — special detailing required (ASCE 7-22 Ch.12)`)
       }
-      if (loads.windMph && loads.windMph > 115) {
-        notes.push(`High wind zone: ${loads.windMph} mph — enhanced connections required (ASCE 7-22 Ch.26)`)
+      const wind = loads.windMph || loads.wind_mph
+      if (wind && wind > 115) {
+        notes.push(`High wind zone: ${wind} mph — enhanced connections required (ASCE 7-22 Ch.26)`)
       }
-      if (loads.snowPsf && loads.snowPsf > 20) {
-        notes.push(`Snow load: ${loads.snowPsf} psf — roof design must account for drift (ASCE 7-22 Ch.7)`)
+      const snow = loads.snowPsf || loads.snow_psf
+      if (snow && snow > 20) {
+        notes.push(`Snow load: ${snow} psf — roof design must account for drift (ASCE 7-22 Ch.7)`)
+      }
+      if (loads.sds) {
+        notes.push(`Seismic parameters: SDS=${loads.sds}, SD1=${loads.sd1 || 'N/A'}`)
       }
     }
     if (siteData.floodZone && siteData.floodZone !== 'X' && siteData.floodZone !== 'ZONE X') {
@@ -214,6 +223,95 @@ function structuralScreen(layouts, siteData) {
   }
 
   return { foundationType, notes }
+}
+
+// ─── GIS QUICK FETCHERS ─────────────────────────────────────────────────────
+// Simplified versions of the full analyze.js fetchers — enough for structural screen
+
+const SHRINK_SWELL = {
+  C: 'High', CL: 'High', SiC: 'High', SiCL: 'Moderate', SC: 'Moderate',
+  SCL: 'Low', SiL: 'Low', Si: 'Low', L: 'Low', SL: 'Low', LS: 'Low',
+  S: 'Low', GR: 'Low', CB: 'Low', ST: 'Low', BY: 'Low', MK: 'Low', PT: 'Low',
+}
+
+async function fetchSoilQuick(lat, lon) {
+  try {
+    const res = await fetch(
+      `https://casoilresource.lawr.ucdavis.edu/api/point/?lon=${lon}&lat=${lat}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const series = data?.series || []
+    const dominant = series.length ? series[0] : null
+    const texture = dominant?.texture || 'L'
+    const shrinkSwell = SHRINK_SWELL[texture] || 'Low'
+    const caliche = lat < 37 && lon < -104 && ['S', 'LS', 'SL', 'SCL'].includes(texture)
+    const bearingHint = ['C', 'CL', 'SiC'].includes(texture) ? 'low' :
+                        ['S', 'LS'].includes(texture) ? 'moderate' : 'good'
+    return { texture, shrinkSwell, caliche, bearingHint }
+  } catch {
+    return { texture: 'L', shrinkSwell: 'Low', caliche: false, bearingHint: 'good' }
+  }
+}
+
+async function fetchSeismicQuick(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      latitude: lat, longitude: lon,
+      riskCategory: 'II', siteClass: 'D', title: 'SiteSense',
+    })
+    const res = await fetch(
+      `https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const design = data?.response?.data?.design || {}
+    const mapped = data?.response?.data?.mapped || {}
+    const ss = parseFloat(design.ss || mapped.ss) || 0.06
+    const s1 = parseFloat(design.s1 || mapped.s1) || 0.02
+    const sds = Math.round(ss * 2 / 3 * 1000) / 1000
+    const sd1 = Math.round(s1 * 2 / 3 * 1000) / 1000
+    // SDC calculation (same logic as analyze.js)
+    const bySds = sds < 0.167 ? 'A' : sds < 0.33 ? 'B' : sds < 0.50 ? 'C' : 'D'
+    const bySd1 = sd1 < 0.067 ? 'A' : sd1 < 0.133 ? 'B' : sd1 < 0.20 ? 'C' : 'D'
+    const order = { A: 0, B: 1, C: 2, D: 3 }
+    const sdc = order[bySd1] > order[bySds] ? bySd1 : bySds
+    // Wind speed lookup (same as analyze.js)
+    let windMph = 95
+    if (lat > 28 && lat < 31 && lon > -96 && lon < -93) windMph = 130
+    else if (lat > 34.5 && lat < 36 && lon > -113 && lon < -110) windMph = 100
+    else if (lat > 31 && lat < 37 && lon > -115 && lon < -109) windMph = 90
+    return { sds, sd1, sdc, windMph }
+  } catch {
+    return { sds: 0.04, sd1: 0.01, sdc: 'A', windMph: 95 }
+  }
+}
+
+const ZONE_RISK = { AE: 'HIGH', A: 'HIGH', AO: 'HIGH', VE: 'HIGH', X: 'LOW', B: 'MODERATE', C: 'LOW' }
+
+async function fetchFloodQuick(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      geometry: `${lon},${lat}`,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'FLD_ZONE,ZONE_SUBTY',
+      returnGeometry: 'false',
+      f: 'json',
+    })
+    const res = await fetch(
+      `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query?${params}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const features = data.features || []
+    if (!features.length) return { zone: 'X', riskLevel: 'LOW' }
+    const zone = (features[0].attributes?.FLD_ZONE || 'X').trim()
+    return { zone, riskLevel: ZONE_RISK[zone] || 'UNKNOWN' }
+  } catch {
+    return { zone: 'X', riskLevel: 'LOW' }
+  }
 }
 
 // ─── GEOCODE ─────────────────────────────────────────────────────────────────
@@ -306,7 +404,7 @@ exports.handler = async (event) => {
 
   try {
     const body = JSON.parse(event.body || '{}')
-    const {
+    let {
       bedrooms = 3,
       bathrooms = 2,
       stories = 1,
@@ -326,6 +424,31 @@ exports.handler = async (event) => {
     const lat = geo ? geo.lat : 33.4484
     const lon = geo ? geo.lon : -112.074
     const region = identifyRegion(lat, lon)
+
+    // Auto-fetch GIS data if no siteData provided
+    if (!siteData) {
+      const [soilQuick, seismicQuick, floodQuick] = await Promise.all([
+        fetchSoilQuick(lat, lon),
+        fetchSeismicQuick(lat, lon),
+        fetchFloodQuick(lat, lon),
+      ])
+      siteData = {
+        soil: {
+          shrinkSwell: soilQuick.shrinkSwell,
+          caliche: soilQuick.caliche,
+          type: soilQuick.texture,
+        },
+        loads: {
+          seismicSdc: seismicQuick.sdc,
+          sds: seismicQuick.sds,
+          sd1: seismicQuick.sd1,
+          windMph: seismicQuick.windMph,
+          snowPsf: lat > 34.5 ? 20 : 0,
+        },
+        floodZone: floodQuick.zone,
+        _autoFetched: true,
+      }
+    }
 
     // Generate 3 layout options
     const layouts = generateLayouts(beds, baths, st, qual)
@@ -357,6 +480,12 @@ exports.handler = async (event) => {
           foundationType,
           structuralNotes,
           aiSummary,
+          gisData: siteData ? {
+            soil: siteData.soil,
+            seismic: siteData.loads,
+            flood: siteData.floodZone,
+            autoFetched: !!siteData._autoFetched,
+          } : null,
           disclaimer: 'This is a preliminary concept estimate only. Actual costs require a licensed contractor bid, site-specific geotechnical report, and architectural plans. Costs are in 2024 USD and projected using 4.5% annual ENR CCI inflation.',
         },
       }),

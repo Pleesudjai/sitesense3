@@ -6,6 +6,100 @@
 
 const Anthropic = require('@anthropic-ai/sdk')
 
+// ─── GEOCODE ────────────────────────────────────────────────────────────────
+
+async function geocodeLocation(location) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1&countrycodes=us`
+    const res = await fetch(url, { headers: { 'User-Agent': 'SiteSense-HackASU/1.0' }, signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.length ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null
+  } catch { return null }
+}
+
+// ─── GIS QUICK FETCHERS ────────────────────────────────────────────────────
+
+const SHRINK_SWELL_MAP = {
+  C: 'High', CL: 'High', SiC: 'High', SiCL: 'Moderate', SC: 'Moderate',
+  SCL: 'Low', SiL: 'Low', Si: 'Low', L: 'Low', SL: 'Low', LS: 'Low',
+  S: 'Low', GR: 'Low', CB: 'Low', ST: 'Low', BY: 'Low', MK: 'Low', PT: 'Low',
+}
+
+async function fetchSoilQuick(lat, lon) {
+  try {
+    const res = await fetch(
+      `https://casoilresource.lawr.ucdavis.edu/api/point/?lon=${lon}&lat=${lat}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const series = data?.series || []
+    const dominant = series.length ? series[0] : null
+    const texture = dominant?.texture || 'L'
+    const shrinkSwell = SHRINK_SWELL_MAP[texture] || 'Low'
+    const caliche = lat < 37 && lon < -104 && ['S', 'LS', 'SL', 'SCL'].includes(texture)
+    return { texture, shrinkSwell, caliche: caliche ? 'likely' : 'none' }
+  } catch {
+    return { texture: 'Unknown', shrinkSwell: 'Unknown', caliche: 'unknown' }
+  }
+}
+
+async function fetchSeismicQuick(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      latitude: lat, longitude: lon, riskCategory: 'II', siteClass: 'D', title: 'SiteSense',
+    })
+    const res = await fetch(
+      `https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const design = data?.response?.data?.design || {}
+    const mapped = data?.response?.data?.mapped || {}
+    const ss = parseFloat(design.ss || mapped.ss) || 0.06
+    const s1 = parseFloat(design.s1 || mapped.s1) || 0.02
+    const sds = Math.round(ss * 2 / 3 * 1000) / 1000
+    const sd1 = Math.round(s1 * 2 / 3 * 1000) / 1000
+    // SDC from ASCE 7-22 Tables 11.6-1 / 11.6-2
+    let sdc = 'A'
+    if (sds >= 0.50 || sd1 >= 0.20) sdc = 'D'
+    else if (sds >= 0.33 || sd1 >= 0.133) sdc = 'C'
+    else if (sds >= 0.167 || sd1 >= 0.067) sdc = 'B'
+    // Wind speed lookup
+    let windMph = 95
+    if (lat > 28 && lat < 31 && lon > -96 && lon < -93) windMph = 130
+    else if (lat > 34.5 && lat < 36 && lon > -113 && lon < -110) windMph = 100
+    else if (lat > 31 && lat < 37 && lon > -115 && lon < -109) windMph = 90
+    return { sds, sd1, sdc, windMph }
+  } catch {
+    return { sds: 0.04, sd1: 0.01, sdc: 'A', windMph: 95 }
+  }
+}
+
+async function fetchFloodQuick(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      geometry: `${lon},${lat}`,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'FLD_ZONE',
+      returnGeometry: 'false',
+      f: 'json',
+    })
+    const res = await fetch(
+      `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query?${params}`,
+      { signal: AbortSignal.timeout(8000) }
+    )
+    const data = await res.json()
+    const features = data.features || []
+    const zone = features.length ? (features[0].attributes?.FLD_ZONE || 'X').trim() : 'X'
+    return { zone }
+  } catch {
+    return { zone: 'Unknown' }
+  }
+}
+
 // ─── CORS ────────────────────────────────────────────────────────────────────
 
 function corsHeaders() {
@@ -119,16 +213,34 @@ exports.handler = async (event) => {
       }
     }
 
+    // ── Auto-fetch GIS if address provided but no full site data ────────
+    let gisContext = ''
+    const address = context?.address
+    if (address && !context?.soil) {
+      const geo = await geocodeLocation(address)
+      if (geo) {
+        const [soil, seismic, flood] = await Promise.all([
+          fetchSoilQuick(geo.lat, geo.lon),
+          fetchSeismicQuick(geo.lat, geo.lon),
+          fetchFloodQuick(geo.lat, geo.lon),
+        ])
+        gisContext = `\nLOCATION: ${address} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})` +
+          `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
+          `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
+          `\nFlood: Zone ${flood.zone}`
+      }
+    }
+
     // ── Build user message ─────────────────────────────────────────────────
-    let userContent = ''
-    if (context && typeof context === 'object' && Object.keys(context).length > 0) {
+    let userContent = question.trim()
+    if (context && typeof context === 'object' && Object.keys(context).length > 0 && !gisContext) {
       userContent =
         'SITE DATA:\n' +
         JSON.stringify(context, null, 2) +
         '\n\nQUESTION: ' +
         question.trim()
-    } else {
-      userContent = question.trim()
+    } else if (gisContext) {
+      userContent = `SITE DATA:${gisContext}\n\nQUESTION: ${question.trim()}`
     }
 
     // ── Call Claude ────────────────────────────────────────────────────────
