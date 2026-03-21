@@ -191,7 +191,7 @@ export default function App() {
               <ElevationChart grid={result.elevation?.grid} bbox={result.elevation?.bbox} polygon={polygon} soilZones={result.soil_zones} />
               <CutFillVisual cutFill={result.cut_fill} />
               <CostTable costs={result.costs} />
-              <ReportButton polygon={polygon} prefs={{ ...prefs, address }} />
+              <ReportButton polygon={polygon} prefs={{ ...prefs, address }} result={result} />
 
               {/* AI Report text */}
               {result.report_text && (
