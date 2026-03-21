@@ -33,11 +33,25 @@ const ESRI_SATELLITE_STYLE = {
 }
 
 /**
- * MapView — Satellite map with polygon drawing tool.
+ * Geocode an address using Nominatim (OpenStreetMap) — free, no token.
+ * Returns { lat, lon } or null if not found.
+ */
+async function geocodeAddress(address) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=us`
+  const res = await fetch(url, {
+    headers: { 'Accept-Language': 'en', 'User-Agent': 'SiteSense-HackASU2025' },
+  })
+  const data = await res.json()
+  if (data.length === 0) return null
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name }
+}
+
+/**
+ * MapView — Satellite map with polygon drawing tool and address search.
  * Uses MapLibre GL JS (no token) + Esri World Imagery (free satellite).
  * Calls onPolygonChange(GeoJSON_geometry) when user draws/updates a polygon.
  */
-export default function MapView({ onPolygonChange, result }) {
+export default function MapView({ onPolygonChange, result, searchAddress, searchTrigger }) {
   const mapContainer = useRef(null)
   const map = useRef(null)
   const draw = useRef(null)
@@ -55,7 +69,7 @@ export default function MapView({ onPolygonChange, result }) {
     map.current.addControl(new maplibregl.NavigationControl(), 'top-left')
     map.current.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left')
 
-    // Polygon draw tool (uses mapbox-gl-draw aliased to maplibre-gl)
+    // Polygon draw tool
     draw.current = new MapboxDraw({
       displayControlsDefault: false,
       controls: { polygon: true, trash: true },
@@ -80,9 +94,7 @@ export default function MapView({ onPolygonChange, result }) {
     const handleChange = () => {
       const data = draw.current.getAll()
       if (data.features.length > 0) {
-        const geom = data.features[0].geometry
-        turf.default(data.features[0])  // compute area (acres) if needed
-        onPolygonChange(geom)
+        onPolygonChange(data.features[0].geometry)
       } else {
         onPolygonChange(null)
       }
@@ -94,6 +106,15 @@ export default function MapView({ onPolygonChange, result }) {
 
     return () => map.current?.remove()
   }, [])
+
+  // Fly to address when searchTrigger increments
+  useEffect(() => {
+    if (!searchTrigger || !searchAddress || !map.current) return
+    geocodeAddress(searchAddress).then(loc => {
+      if (!loc) return
+      map.current.flyTo({ center: [loc.lon, loc.lat], zoom: 16, speed: 1.5 })
+    })
+  }, [searchTrigger])
 
   // Add result marker when analysis is ready
   useEffect(() => {

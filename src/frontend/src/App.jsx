@@ -10,6 +10,7 @@ import { analyzeParcel } from './api'
 export default function App() {
   const [polygon, setPolygon] = useState(null)
   const [address, setAddress] = useState('')
+  const [searchTrigger, setSearchTrigger] = useState(0)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
@@ -18,6 +19,10 @@ export default function App() {
     floors: 1,
     budget: 'mid',
   })
+
+  const handleSearch = () => {
+    if (address.trim()) setSearchTrigger(t => t + 1)
+  }
 
   const handleAnalyze = async () => {
     if (!polygon) return
@@ -42,13 +47,24 @@ export default function App() {
           <p className="text-xs text-teal">AI Land Feasibility Tool · HackASU 2025</p>
         </div>
         <div className="flex items-center gap-4">
-          <input
-            className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm w-72
-                       focus:outline-none focus:border-teal placeholder-gray-500"
-            placeholder="Enter address (or draw on map)"
-            value={address}
-            onChange={e => setAddress(e.target.value)}
-          />
+          <div className="flex items-center gap-1">
+            <input
+              className="bg-gray-800 border border-gray-600 rounded-l px-3 py-1.5 text-sm w-64
+                         focus:outline-none focus:border-teal placeholder-gray-500"
+              placeholder="Search address…"
+              value={address}
+              onChange={e => setAddress(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+            <button
+              onClick={handleSearch}
+              className="bg-gray-700 hover:bg-gray-600 border border-gray-600 border-l-0 rounded-r
+                         px-3 py-1.5 text-sm transition-colors"
+              title="Search address"
+            >
+              🔍
+            </button>
+          </div>
           {/* Preferences */}
           <select
             className="bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm"
@@ -81,7 +97,12 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Map — left 60% */}
         <div className="w-3/5 relative">
-          <MapView onPolygonChange={setPolygon} result={result} />
+          <MapView
+            onPolygonChange={setPolygon}
+            result={result}
+            searchAddress={address}
+            searchTrigger={searchTrigger}
+          />
           {!polygon && (
             <div className="absolute inset-0 flex items-end justify-center pb-12 pointer-events-none">
               <div className="bg-black/70 text-white text-sm px-5 py-3 rounded-lg backdrop-blur">
