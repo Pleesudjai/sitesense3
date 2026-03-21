@@ -4,8 +4,6 @@
  * Returns compact/standard/spacious layouts, structural notes, AI summary
  */
 
-const Anthropic = require('@anthropic-ai/sdk')
-
 // ─── CORS ────────────────────────────────────────────────────────────────────
 
 function corsHeaders() {
@@ -238,7 +236,7 @@ async function fetchSoilQuick(lat, lon) {
   try {
     const res = await fetch(
       `https://casoilresource.lawr.ucdavis.edu/api/point/?lon=${lon}&lat=${lat}`,
-      { signal: AbortSignal.timeout(8000) }
+      { signal: AbortSignal.timeout(5000) }
     )
     const data = await res.json()
     const series = data?.series || []
@@ -262,7 +260,7 @@ async function fetchSeismicQuick(lat, lon) {
     })
     const res = await fetch(
       `https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
-      { signal: AbortSignal.timeout(8000) }
+      { signal: AbortSignal.timeout(5000) }
     )
     const data = await res.json()
     const design = data?.response?.data?.design || {}
@@ -302,7 +300,7 @@ async function fetchFloodQuick(lat, lon) {
     })
     const res = await fetch(
       `https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query?${params}`,
-      { signal: AbortSignal.timeout(8000) }
+      { signal: AbortSignal.timeout(5000) }
     )
     const data = await res.json()
     const features = data.features || []
@@ -322,7 +320,7 @@ async function geocodeLocation(location) {
     const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=us`
     const res = await fetch(url, {
       headers: { 'User-Agent': 'SiteSense-HackASU/1.0' },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return null
     const data = await res.json()
@@ -335,55 +333,31 @@ async function geocodeLocation(location) {
 
 // ─── CLAUDE AI SUMMARY ──────────────────────────────────────────────────────
 
-async function generateAiSummary(layouts, costs, structuralNotes, quality, location) {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return 'AI summary unavailable — ANTHROPIC_API_KEY not configured. ' +
-      `The Standard layout is typically the best balance of space and cost. ` +
-      `Review structural notes above before proceeding.`
+function generateSummary(layouts, costs, structuralNotes, quality, location) {
+  // Rule-based summary — no Claude API call, instant response
+  const best = layouts.reduce((a, b, i) => (b.score >= layouts[a.idx].score ? { idx: i, layout: b } : a), { idx: 0, layout: layouts[0] })
+  const b = best.layout
+  const c = costs[best.idx]
+  const qualLabel = { economy: 'Economy', mid: 'Mid-Range', premium: 'Premium', luxury: 'Luxury' }[quality] || 'Mid-Range'
+
+  let summary = `For a ${qualLabel} build in ${location}, we recommend the **${b.name}** layout at ${b.totalSF.toLocaleString()} SF. `
+  summary += `The estimated construction cost ranges from $${c.range.low.toLocaleString()} to $${c.range.high.toLocaleString()} ($${c.costPerSF}/SF including foundation).\n\n`
+
+  // Compare options
+  const compact = layouts[0], spacious = layouts[2]
+  const cCompact = costs[0], cSpacious = costs[2]
+  summary += `The Compact option (${compact.totalSF.toLocaleString()} SF) saves approximately $${(c.range.expected - cCompact.range.expected).toLocaleString()} but sacrifices living space. `
+  summary += `The Spacious option (${spacious.totalSF.toLocaleString()} SF) adds ${(spacious.totalSF - b.totalSF).toLocaleString()} SF for an additional $${(cSpacious.range.expected - c.range.expected).toLocaleString()}.\n\n`
+
+  // Structural concerns
+  if (structuralNotes.length > 0) {
+    summary += `**Site considerations:** ${structuralNotes[0]}`
+    if (structuralNotes.length > 1) summary += ` Additionally, ${structuralNotes[1].toLowerCase()}`
+    summary += '\n\n'
   }
 
-  try {
-    const client = new Anthropic({ apiKey })
-    const layoutSummary = layouts.map((l, i) => (
-      `${l.name}: ${l.totalSF.toLocaleString()} SF, ` +
-      `$${costs[i].range.low.toLocaleString()}-$${costs[i].range.high.toLocaleString()}, ` +
-      `${l.rooms.length} rooms, ${l.structuralSystem}`
-    )).join('\n')
-
-    const prompt = `You are an expert residential construction estimator in Arizona.
-
-## Task
-Summarize these 3 house concept options for a client looking to build in ${location}.
-Recommend one option and explain why. Mention any structural concerns.
-
-## Options
-${layoutSummary}
-
-## Quality Level: ${quality}
-
-## Structural Notes
-${structuralNotes.length > 0 ? structuralNotes.join('\n') : 'No special concerns.'}
-
-## Instructions
-- Write 3-4 short paragraphs in plain English
-- Recommend the best value option
-- Flag any structural concerns that could affect cost
-- End with: "This is a preliminary concept estimate only. Actual costs require a licensed contractor bid and site-specific engineering."
-- Keep it under 250 words`
-
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
-      messages: [{ role: 'user', content: prompt }],
-    })
-
-    return message.content[0].text
-  } catch (err) {
-    console.error('Claude API error:', err.message)
-    return 'AI summary generation failed. The Standard layout typically offers the best balance ' +
-      'of livable space and construction cost. Review structural notes for site-specific concerns.'
-  }
+  summary += `This is a preliminary concept estimate only. Actual costs require a licensed contractor bid and site-specific engineering.`
+  return summary
 }
 
 // ─── HANDLER ─────────────────────────────────────────────────────────────────
@@ -466,7 +440,7 @@ exports.handler = async (event) => {
     }))
 
     // AI summary
-    const aiSummary = await generateAiSummary(layouts, costs, structuralNotes, qual, location)
+    const aiSummary = generateSummary(layouts, costs, structuralNotes, qual, location)
 
     return {
       statusCode: 200,
