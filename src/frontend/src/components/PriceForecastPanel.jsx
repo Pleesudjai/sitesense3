@@ -4,6 +4,7 @@
  */
 
 import { useState } from 'react'
+import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart } from 'recharts'
 import { predictPrice } from '../api'
 import ProfessionalDisclaimer from './ProfessionalDisclaimer'
 
@@ -130,37 +131,37 @@ export default function PriceForecastPanel({ address, onAddressChange, siteData,
             <p className="text-xs text-gray-500 mt-1">${result.currentEstimate.perSF}/SF · {result.location?.state || 'US'}</p>
           </div>
 
-          {/* Forecast timeline */}
+          {/* Forecast line chart */}
           <div className="bg-gray-900 rounded-lg p-4">
             <h3 className="text-sm font-semibold text-gray-300 mb-3">Cost Forecast Timeline</h3>
-            <div className="space-y-2">
-              {[{ year: 0, label: 'Now', ...result.currentEstimate }, ...result.forecasts.map(f => ({ ...f, label: `${f.year}yr` }))].map((f, i) => {
-                const maxHigh = Math.max(result.currentEstimate.high, ...result.forecasts.map(x => x.high))
-                const pctLow = (f.low / maxHigh) * 100
-                const pctHigh = (f.high / maxHigh) * 100
-                const pctExp = (f.expected / maxHigh) * 100
-                return (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 w-10 shrink-0 text-right font-mono">{f.label}</span>
-                    <div className="flex-1 relative h-6 bg-gray-800 rounded overflow-hidden">
-                      {/* Range bar */}
-                      <div className="absolute h-full bg-teal-900/60 rounded"
-                        style={{ left: `${pctLow}%`, width: `${pctHigh - pctLow}%` }} />
-                      {/* Expected marker */}
-                      <div className="absolute h-full w-0.5 bg-teal-400"
-                        style={{ left: `${pctExp}%` }} />
-                    </div>
-                    <span className="text-xs text-gray-300 w-24 shrink-0 text-right font-mono">
-                      {fmt(f.expected)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="flex justify-between text-xs text-gray-600 mt-1 px-14">
-              <span>Low</span>
-              <span>Expected</span>
-              <span>High</span>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={[
+                { year: 0, label: 'Now', ...result.currentEstimate },
+                ...result.forecasts.map(f => ({ ...f, label: `Yr ${f.year}` })),
+              ]} margin={{ top: 10, right: 20, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="year" tick={{ fill: '#9ca3af', fontSize: 12 }} label={{ value: 'Year', position: 'insideBottom', offset: -2, fill: '#6b7280', fontSize: 12 }} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} width={65} />
+                <Tooltip
+                  contentStyle={{ background: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: '#9ca3af' }}
+                  formatter={(v, name) => [fmt(v), name === 'expected' ? 'Expected' : name === 'low' ? 'Low' : 'High']}
+                  labelFormatter={v => v === 0 ? 'Now' : `Year ${v}`}
+                />
+                {/* Confidence band: low to high */}
+                <Area type="monotone" dataKey="low" stackId="band" stroke="none" fill="transparent" />
+                <Area type="monotone" dataKey="high" stackId="band" stroke="none" fill="#02C39A" fillOpacity={0.1} />
+                {/* Low/High dashed lines */}
+                <Line type="monotone" dataKey="low" stroke="#475569" strokeWidth={1} strokeDasharray="4 4" dot={false} />
+                <Line type="monotone" dataKey="high" stroke="#475569" strokeWidth={1} strokeDasharray="4 4" dot={false} />
+                {/* Expected solid line */}
+                <Line type="monotone" dataKey="expected" stroke="#02C39A" strokeWidth={2.5} dot={{ fill: '#02C39A', r: 4 }} activeDot={{ r: 6 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-6 text-xs text-gray-500 mt-1">
+              <span><span style={{ color: '#02C39A' }}>——</span> Expected</span>
+              <span><span style={{ color: '#475569' }}>- - -</span> Low / High range</span>
+              <span style={{ color: '#02C39A', opacity: 0.3 }}>■</span> <span>Confidence band</span>
             </div>
           </div>
 
