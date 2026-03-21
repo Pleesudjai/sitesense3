@@ -210,25 +210,19 @@ export default function App() {
       </div>
 
       {/* ── House Concept tab ── */}
-      {activeTab === 'house' && (
-        <div className="flex-1 overflow-y-auto">
-          <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setHouseResult} />
-        </div>
-      )}
+      <div className={`flex-1 overflow-y-auto ${activeTab !== 'house' ? 'hidden' : ''}`}>
+        <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setHouseResult} />
+      </div>
 
       {/* ── Price Forecast tab ── */}
-      {activeTab === 'forecast' && (
-        <div className="flex-1 overflow-y-auto">
-          <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setForecastResult} />
-        </div>
-      )}
+      <div className={`flex-1 overflow-y-auto ${activeTab !== 'forecast' ? 'hidden' : ''}`}>
+        <PriceForecastPanel address={address} onAddressChange={setAddress} siteData={result} onResult={setForecastResult} />
+      </div>
 
       {/* ── Engineering Q&A tab ── */}
-      {activeTab === 'engineering' && (
-        <div className="flex-1 overflow-y-auto">
-          <EngineeringAssistant siteData={result} address={address} />
-        </div>
-      )}
+      <div className={`flex-1 overflow-y-auto ${activeTab !== 'engineering' ? 'hidden' : ''}`}>
+        <EngineeringAssistant siteData={result} address={address} />
+      </div>
     </div>
   )
 }
