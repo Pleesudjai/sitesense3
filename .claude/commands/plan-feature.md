@@ -1,76 +1,56 @@
-# /plan-feature — Feature Planning Command
+# /plan-feature — SiteSense Feature Planning
 
-Use this BEFORE implementing any feature. Produces a spec file that guides a clean implementation session.
+Use BEFORE implementing any new feature. Creates a spec in `specs/` to guide a clean implementation session.
 
-## When to Use
-- Before starting a new feature or major component
-- When you need to think through architecture before coding
-- After receiving a vague requirement that needs clarification
+## SiteSense Feature Areas (for context)
+- **Map / Draw** — MapLibre + Esri satellite + Nominatim search + polygon draw tool
+- **GIS Data** — USGS elevation, FEMA flood, USDA soil, USGS seismic, USFWS wetlands (all free, no auth)
+- **Engineering Engine** — cut/fill, slope, foundation type, structural loads, stormwater (in `src/backend/engineering/`)
+- **Cost Engine** — ROM estimate + 10yr projection at 4.5% ENR CCI (`src/backend/engineering/cost.py`)
+- **AI Report** — Claude sonnet-4-6 translates results → 6-section plain-English report (`src/backend/ai/translate.py`)
+- **PDF** — ReportLab generates PDF bytes → base64 → download (`src/backend/report/pdf_report.py`)
+- **Netlify Functions** — `analyze.py` and `report.py` are the Lambda entry points
 
 ## Steps
 
-1. **Understand the request:**
-   Ask clarifying questions if needed:
-   - What does success look like for this feature?
-   - What inputs does it take? What outputs does it produce?
-   - Are there any constraints (time, data, API limits)?
+1. **Clarify the feature:**
+   - What exactly needs to change or be added?
+   - Which layer: frontend component / Netlify function / backend module / AI prompt?
+   - What does success look like at demo time?
 
-2. **Spin up research sub-agents:**
-   Delegate the following to parallel sub-agents — DO NOT do this research yourself:
-   - **Web best practices:** "What are best practices for [feature] in 2025?"
-   - **Arizona data sources:** "What public datasets are available for [topic] in Arizona?"
-   - **Similar implementations:** "Are there examples of [feature] built with Claude API?"
+2. **Research (sub-agents only — never dump raw content into main context):**
+   - For GIS APIs: check free endpoint availability, rate limits, response shape
+   - For engineering rules: check ACI/ASCE code references in CLAUDE.md
+   - For UI: check existing components in `src/frontend/src/components/`
 
-   Each sub-agent returns a 3–5 bullet summary. Discard raw content.
-
-3. **Synthesize into a spec:**
-   Create a file at `specs/[feature-name].md` with this structure:
+3. **Write spec to `specs/[feature-name].md`:**
 
    ```markdown
-   # Feature Spec: [Feature Name]
-   Date: [today's date]
-   Status: Planning
+   # Feature Spec: [Name]
+   Date: [today]
+   Layer: frontend | netlify-function | backend-module | ai-prompt | pdf
 
    ## What We're Building
-   [1-2 sentence description]
+   [1-2 sentences]
 
-   ## Why (User Value)
-   [1-2 sentences on the problem this solves]
+   ## Inputs / Outputs
+   - Input: [what comes in]
+   - Output: [what goes out]
 
-   ## Inputs
-   - [Input 1]: [description]
-   - [Input 2]: [description]
-
-   ## Outputs
-   - [Output 1]: [description]
-
-   ## Architecture Plan
-   ### Frontend
-   [What UI components are needed]
-
-   ### Backend
-   [What API endpoints are needed]
-
-   ### AI Layer
-   [What Claude does — prompt strategy, expected outputs]
-
-   ### Data Sources
-   [What data is needed, where it comes from]
+   ## Files to Create or Edit
+   - `[path]` — [why]
 
    ## Implementation Steps
    1. [ ] Step 1
    2. [ ] Step 2
-   3. [ ] Step 3
 
-   ## Open Questions
-   - [ ] Question 1
+   ## Demo Test
+   [Which of the 3 demo addresses will verify this works?]
 
-   ## Out of Scope (for MVP)
-   - Item 1
+   ## Out of Scope
+   - [What we are NOT doing]
    ```
 
-4. **Review with user:**
-   Present the spec and ask: "Does this match what you want? Any changes before we start coding?"
+4. **Review with user** before coding starts.
 
-5. **Hand off to execution:**
-   Once approved, say: "Run /execute with this spec to start a fresh implementation session."
+5. **Hand off:** "Open a fresh session, run /prime, then /execute with this spec."

@@ -75,3 +75,49 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `netlify/functions/package-lock.json` — generated after local `npm install`
 
 **Next:** Run `netlify dev` from project root → open `http://localhost:5176` (or whichever port Vite picks) for full local testing including Analyze Parcel.
+
+---
+
+## 2026-03-21 — Elevation Display Redesign (Satellite + Contour + 3D)
+**What was built:** Complete rewrite of ElevationChart.jsx with 3 interactive views: satellite imagery with smooth contour lines (MapLibre GeoJSON), canvas heatmap with zoom/pan, and interactive 3D surface with satellite texture mapping and rotate/zoom. All views show the user's drawn polygon boundary (cyan dashed outline).
+**Why this approach:** Civil engineering PhD user wanted engineering-grade contours (marching squares + Catmull-Rom spline smoothing + proper intervals) that are also understandable by non-engineer landowners (plain-English terrain summary, satellite imagery base). Aspect ratio preservation was critical — bbox geographic ratio drives all view dimensions. Contours extend 20x beyond bbox on satellite view so they're visible when zoomed out.
+**Files changed:**
+- `src/frontend/src/components/ElevationChart.jsx` — full rewrite (~850 lines), 3 view modes, contour engine with upsampling + marching squares + chaining + Catmull-Rom smoothing
+- `src/frontend/src/App.jsx` — pass `polygon` prop to ElevationChart
+
+---
+
+## 2026-03-21 — GIS Phase 2+3: 13 Data Layers (from todofromX.md)
+**What was built:** Expanded from 6 to 13 parallel GIS data fetches in analyze.js. Added: NOAA Atlas 14 precipitation (live API), EPA contamination screening (Envirofacts + FRS fallback), USGS NHD hydrography/streams, USFWS critical habitat/endangered species, NPS National Register historic sites, USGS landslide susceptibility (rule-based), NOAA sea level rise (coastal). All free, no auth.
+**Why this approach:** Following Jacob's todofromX.md prioritization — engineering credibility (core 4 layers) + user-perceived value (parcel context) + surprise prevention (contamination, species) + regional differentiation (landslide, wildfire, coastal). All 13 fetches run in single Promise.all — no extra latency.
+**Files changed:**
+- `netlify/functions/analyze.js` — 7 new GIS fetch functions, wired into parallel Promise.all
+- `src/frontend/src/components/RiskCards.jsx` — 13 risk cards in 3-column grid
+- `src/frontend/src/api.js` — demo data for all 13 layers
+
+---
+
+## 2026-03-21 — SSURGO Soil Layer Upgrade (Full Engineering Properties)
+**What was built:** Two-step soil data: SoilWeb (fast texture) + USDA SDA SQL query for full SSURGO properties — hydrologic soil group (A/B/C/D), flooding/ponding frequency, restrictive layer depth, concrete/steel corrosion risk, septic suitability, and auto-generated building limitations list with ACI/IBC code references.
+**Why this approach:** The todofromX.md explicitly called for HSG, drainage class, shrink-swell, flooding frequency, and building site limitations from SSURGO. SoilWeb alone only gives texture class. SDA provides the full component-level data via SQL.
+**Files changed:**
+- `netlify/functions/analyze.js` — rewrote getSoilData with SDA SQL query
+- `src/frontend/src/components/RiskCards.jsx` — soil card shows HSG + limitations count
+- `src/frontend/src/api.js` — expanded demo soil data
+
+---
+
+## 2026-03-21 — Demo Mode + New Netlify Deployment
+**What was built:** DEMO_MODE flag in api.js returns hardcoded Phoenix-lot data for offline demos. Vite proxy pointed to new Netlify site (fastidious-clafoutis-995943.netlify.app) after original site hit bandwidth limits.
+**Why this approach:** Original Netlify account paused for bandwidth. Created new account for fresh limits. Demo mode ensures the app works without any backend for judge demos.
+**Files changed:**
+- `src/frontend/src/api.js` — DEMO_MODE with full mock data
+- `src/frontend/vite.config.js` — proxy target to new Netlify URL
+
+---
+
+## 2026-03-21 — WISC Slash Commands Updated for SiteSense
+**What was built:** All 5 slash commands (/prime, /plan-feature, /execute, /handoff, /commit) rewritten with SiteSense-specific context — file paths, layer references, demo addresses, deploy URLs.
+**Why this approach:** Generic WISC templates didn't reference the actual architecture. SiteSense-specific commands speed up future sessions.
+**Files changed:**
+- `.claude/commands/prime.md`, `plan-feature.md`, `execute.md`, `handoff.md`, `commit.md`

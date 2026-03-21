@@ -1,54 +1,55 @@
-# /handoff — Session Handoff Command
+# /handoff — SiteSense Session Handoff
 
-Use when: context is getting long (50+ messages), switching tasks, or ending a session.
-This creates a `docs/handoff.md` that the next session reads with `/prime`.
+Use when: context is getting long (50+ messages), switching focus, or ending a work block.
+Writes `docs/handoff.md` so the next session picks up exactly where this one left off.
 
 ## Steps
 
-1. **Summarize what was accomplished this session:**
-   - What features were built?
-   - What files were created or modified?
-   - What decisions were made (and why)?
+1. **List what was completed this session** (be specific — file names, features, fixes)
 
-2. **Capture current state:**
-   - What is working?
-   - What is broken or incomplete?
-   - What is the next immediate task?
+2. **Capture current state** across all 4 layers:
+   - Frontend (React components, map, charts)
+   - Netlify Functions (analyze.py, report.py)
+   - Backend modules (data APIs, engineering, AI, PDF)
+   - Deploy (Netlify live URL, env vars set?)
 
-3. **List open questions or blockers:**
-   - Anything unresolved that the next session should address
+3. **List what is broken or incomplete**
 
-4. **Write to `docs/handoff.md`:**
+4. **Write `docs/handoff.md`:**
 
-   ```markdown
-   # Session Handoff
-   Date: [timestamp]
-   Session: [brief description of what this session focused on]
+```markdown
+# Session Handoff
+Date: [timestamp]
+Focus: [what this session worked on]
 
-   ## Completed This Session
-   - [Item 1]
-   - [Item 2]
+## Completed
+- [file or feature] — [what it does now]
 
-   ## Current State
-   ### Working
-   - [Feature/component that works]
+## Current State
+### Working end-to-end
+- [list]
 
-   ### In Progress / Incomplete
-   - [What's half-done and where it stands]
+### Built but untested
+- [list]
 
-   ### Broken
-   - [Anything broken and what caused it]
+### Broken / Incomplete
+- [what's broken and last known error]
 
-   ## Next Steps (Priority Order)
-   1. [First thing next session should do]
-   2. [Second thing]
-   3. [Third thing]
+## Next Steps (priority order)
+1. [Most urgent — likely blocking demo]
+2. [Second]
+3. [Third]
 
-   ## Open Questions
-   - [ ] [Question 1]
+## Deploy Status
+- Netlify live: https://ornate-marigold-192751.netlify.app
+- ANTHROPIC_API_KEY set in Netlify: [ ] yes / [ ] no
+- Last successful deploy: [timestamp or "unknown"]
 
-   ## Key Files Modified This Session
-   - `src/[file]` — [what changed]
-   ```
+## Open Questions / Blockers
+- [ ] [question]
 
-5. **Confirm:** Tell the user "Handoff written to docs/handoff.md. Start the next session with /prime."
+## Files Modified This Session
+- `[path]` — [what changed]
+```
+
+5. Confirm: "Handoff written. Start next session with /prime."

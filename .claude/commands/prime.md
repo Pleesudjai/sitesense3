@@ -1,36 +1,43 @@
-# /prime — Session Initialization Command
+# /prime — SiteSense Session Initialization
 
-Run this at the START of every new Claude Code session to get up to speed.
+Run this at the START of every new Claude Code session.
 
 ## Steps
 
-1. **Read the global rules:**
-   Read `CLAUDE.md` — understand the project, stack, and conventions.
+1. **Read global rules:**
+   Read `CLAUDE.md` — has the full as-built architecture, stack, free APIs, Netlify function setup, and coding standards.
 
-2. **Check recent decisions:**
-   Read `docs/decisions.md` — see what has been decided and why.
+2. **Check decisions:**
+   Read `docs/decisions.md` — running log of what was built and why.
 
-3. **Check handoff (if exists):**
-   If `docs/handoff.md` exists, read it — it contains the last session's summary.
+3. **Check last handoff:**
+   Read `docs/handoff.md` — last session's completed work, broken items, and next steps.
 
-4. **Scan source code:**
-   Run a quick scan of `src/` to understand current file structure:
-   ```
-   List all files in src/ recursively
-   ```
+4. **Check TODO list:**
+   Read `TODO.md` if it exists — outstanding tasks and priorities.
 
-5. **Check git log (if git initialized):**
-   ```
+5. **Scan current source:**
+   List files in:
+   - `netlify/functions/` — Python Lambda handlers
+   - `src/frontend/src/` — React components
+   - `src/backend/` — engineering modules (data, engineering, ai, report)
+
+6. **Check git log:**
+   ```bash
    git log --oneline -10
    ```
-   This gives you the last 10 commits as a memory of what was built.
 
-6. **Report back:**
-   Tell me in 3–5 bullet points:
-   - What project we're building
-   - What has been completed
-   - What is in progress
-   - What still needs to be done
-   - Any open questions or blockers
+7. **Report back — 5 bullets:**
+   - Project: SiteSense — what stage are we at?
+   - What is fully working (end-to-end tested)?
+   - What is built but untested or broken?
+   - What still needs to be built?
+   - Any open blockers (API key, CORS, deploy issue)?
 
-Now you are fully oriented. Ask me what we should work on next.
+## SiteSense Quick Reference
+- **Live:** https://ornate-marigold-192751.netlify.app
+- **GitHub:** https://github.com/Pleesudjai/sitesense
+- **Backend:** Netlify Functions at `netlify/functions/analyze.py` and `report.py`
+- **Key env var:** `ANTHROPIC_API_KEY` — must be set in Netlify dashboard
+- **CRITICAL:** `vite.config.js` aliases `mapbox-gl` → `maplibre-gl` — do not remove
+- **Demo addresses:** Tempe AZ, Houston TX flood zone, Flagstaff AZ hillside

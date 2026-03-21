@@ -169,7 +169,7 @@ export default function App() {
               </div>
 
               <RiskCards data={result} />
-              <ElevationChart grid={result.elevation?.grid} bbox={result.elevation?.bbox} />
+              <ElevationChart grid={result.elevation?.grid} bbox={result.elevation?.bbox} polygon={polygon} />
               <CutFillVisual cutFill={result.cut_fill} />
               <CostTable costs={result.costs} />
               <ReportButton polygon={polygon} prefs={{ ...prefs, address }} />
