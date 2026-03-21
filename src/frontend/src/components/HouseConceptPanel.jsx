@@ -14,11 +14,10 @@ const QUALITY_OPTIONS = [
   { value: 'luxury',   label: 'Luxury',    rate: 350 },
 ]
 
-export default function HouseConceptPanel({ address, siteData }) {
+export default function HouseConceptPanel({ address, onAddressChange, siteData }) {
   const [bedrooms, setBedrooms]     = useState(2)
   const [bathrooms, setBathrooms]   = useState(2)
   const [stories, setStories]       = useState(1)
-  const [location, setLocation]     = useState(address || 'Phoenix, AZ')
   const [quality, setQuality]       = useState('mid')
   const [useSiteData, setUseSiteData] = useState(false)
   const [loading, setLoading]       = useState(false)
@@ -30,7 +29,7 @@ export default function HouseConceptPanel({ address, siteData }) {
     setLoading(true)
     setError(null)
     try {
-      const params = { bedrooms, bathrooms, stories, location: location || 'Phoenix, AZ', quality }
+      const params = { bedrooms, bathrooms, stories, location: address || 'Phoenix, AZ', quality }
       if (useSiteData && siteData) {
         params.siteData = {
           soil: siteData.soil,
@@ -111,8 +110,8 @@ export default function HouseConceptPanel({ address, siteData }) {
             Location
             <input
               type="text"
-              value={location}
-              onChange={e => setLocation(e.target.value)}
+              value={address || ''}
+              onChange={e => onAddressChange?.(e.target.value)}
               placeholder="City, State or address"
               className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-teal"
             />

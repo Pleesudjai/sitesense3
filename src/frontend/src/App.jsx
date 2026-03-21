@@ -209,14 +209,14 @@ export default function App() {
       {/* ── House Concept tab ── */}
       {activeTab === 'house' && (
         <div className="flex-1 overflow-y-auto">
-          <HouseConceptPanel address={address} siteData={result} />
+          <HouseConceptPanel address={address} onAddressChange={setAddress} siteData={result} />
         </div>
       )}
 
       {/* ── Engineering Q&A tab ── */}
       {activeTab === 'engineering' && (
         <div className="flex-1 overflow-y-auto">
-          <EngineeringAssistant siteData={result} />
+          <EngineeringAssistant siteData={result} address={address} />
         </div>
       )}
     </div>

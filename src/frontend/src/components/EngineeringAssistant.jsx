@@ -26,7 +26,7 @@ const SOURCE_STYLES = {
   CALCULATED: 'bg-blue-800 text-blue-200',
 }
 
-export default function EngineeringAssistant({ siteData }) {
+export default function EngineeringAssistant({ siteData, address }) {
   const [question, setQuestion]       = useState('')
   const [useSiteData, setUseSiteData] = useState(false)
   const [loading, setLoading]         = useState(false)
@@ -39,7 +39,7 @@ export default function EngineeringAssistant({ siteData }) {
     setLoading(true)
     setError(null)
     try {
-      const context = useSiteData && siteData ? siteData : null
+      const context = useSiteData && siteData ? { ...siteData, address } : (address ? { address } : null)
       const res = await askEngineering(question, context)
       setConversations(prev => [{ q: question, ...res.data }, ...prev])
       setQuestion('')
