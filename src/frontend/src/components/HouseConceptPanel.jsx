@@ -129,10 +129,10 @@ export default function HouseConceptPanel({ address, onAddressChange, siteData, 
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !address?.trim()}
           className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5 transition-colors"
         >
-          {loading ? 'Generating Concepts...' : 'Generate Concepts'}
+          {loading ? 'Generating Concepts...' : !address?.trim() ? 'Enter an address in the search bar first' : 'Generate Concepts'}
         </button>
       </form>
 
