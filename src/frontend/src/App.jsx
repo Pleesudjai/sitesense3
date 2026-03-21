@@ -4,10 +4,10 @@ import RiskCards from './components/RiskCards'
 import ElevationChart from './components/ElevationChart'
 import CutFillVisual from './components/CutFillVisual'
 import CostTable from './components/CostTable'
-import ReportButton from './components/ReportButton'
 import HouseConceptPanel from './components/HouseConceptPanel'
 import EngineeringAssistant from './components/EngineeringAssistant'
 import PriceForecastPanel from './components/PriceForecastPanel'
+import { generateReport } from './components/ReportGenerator'
 import { analyzeParcel } from './api'
 
 const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', forecast: 'Price Forecast', engineering: 'Engineering Q&A' }
@@ -110,6 +110,15 @@ export default function App() {
               </span>
             ) : 'Analyze Parcel'}
           </button>
+          <button
+            onClick={() => generateReport(result, address, polygon, houseResult, forecastResult)}
+            disabled={!result}
+            className="px-4 py-1.5 rounded font-semibold text-sm transition-all
+                       bg-navy border border-teal hover:bg-teal/20 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Generate PDF report from all completed analyses"
+          >
+            PDF Report
+          </button>
         </div>
       </header>
 
@@ -196,7 +205,6 @@ export default function App() {
               <ElevationChart grid={result.elevation?.grid} bbox={result.elevation?.bbox} polygon={polygon} soilZones={result.soil_zones} />
               <CutFillVisual cutFill={result.cut_fill} />
               <CostTable costs={result.costs} />
-              <ReportButton polygon={polygon} prefs={{ ...prefs, address }} result={result} houseResult={houseResult} forecastResult={forecastResult} />
 
               {/* AI Report text */}
               {result.report_text && (
