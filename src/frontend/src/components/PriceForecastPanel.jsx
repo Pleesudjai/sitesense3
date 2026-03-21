@@ -23,6 +23,46 @@ const CONTRIBUTION_COLORS = {
   context:   'bg-gray-700 text-gray-400',
 }
 
+// Plain-English explanations for each indicator
+const INDICATOR_EXPLAIN = {
+  constructionInflation: {
+    title: 'Construction Material & Labor Costs',
+    explain: rate => rate > 0.04
+      ? `Building materials and labor are rising ${(rate*100).toFixed(1)}% per year — faster than general inflation. Lumber, concrete, and steel prices are the main drivers. Waiting to build will likely cost more.`
+      : `Construction costs are rising at ${(rate*100).toFixed(1)}% per year — roughly in line with historical averages. Materials and labor costs are relatively stable right now.`,
+  },
+  localCostFactor: {
+    title: 'Your Local Cost Level',
+    explain: val => val > 1.05
+      ? `Building in your area costs about ${Math.round((val-1)*100)}% more than the national average. Local labor demand and cost of living push prices up.`
+      : val < 0.95
+        ? `Building in your area costs about ${Math.round((1-val)*100)}% less than the national average — a relative cost advantage.`
+        : `Building costs in your area are close to the national average.`,
+  },
+  housingMarketTrend: {
+    title: 'Local Housing Market Trend',
+    explain: rate => rate > 0.05
+      ? `Home values in your state are appreciating ${(rate*100).toFixed(1)}% per year — a strong seller's market. Building now locks in today's construction cost while property values rise.`
+      : rate > 0.03
+        ? `Home values are growing ${(rate*100).toFixed(1)}% per year — moderate appreciation. The market is healthy but not overheated.`
+        : `Home values are growing slowly at ${(rate*100).toFixed(1)}% per year. Less urgency to build immediately from a market timing perspective.`,
+  },
+  macroInflation: {
+    title: 'Overall Economy (Inflation)',
+    explain: rate => `The Federal Reserve's preferred inflation measure is at ${(rate*100).toFixed(1)}%. This sets the floor for how fast all prices — including construction — are rising across the economy.`,
+  },
+  supplyConditions: {
+    title: 'Housing Supply & Mortgage Rates',
+    explain: (_, ind) => {
+      const rate = ind.mortgage_rate || 6.85
+      const temp = ind.market_temp || 'balanced'
+      if (rate > 7) return `Mortgage rates are high (${rate}%) which is cooling demand. The market is ${temp}. Higher rates mean fewer buyers competing, but also higher financing costs if you need a construction loan.`
+      if (rate > 6) return `Mortgage rates are at ${rate}% — elevated but stabilizing. The market is ${temp}. Construction loan rates will be similar, affecting your total project cost.`
+      return `Mortgage rates are at ${rate}% — relatively favorable. The market is ${temp}. Good conditions for financing a new build.`
+    },
+  },
+}
+
 export default function PriceForecastPanel({ address, onAddressChange, siteData, onResult }) {
   const [bedrooms, setBedrooms]   = useState(2)
   const [bathrooms, setBathrooms] = useState(2)
@@ -204,22 +244,30 @@ export default function PriceForecastPanel({ address, onAddressChange, siteData,
           {result.indicators && (
             <div className="bg-gray-900 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-300 mb-3">What's Driving This Forecast</h3>
-              <div className="space-y-2">
-                {Object.entries(result.indicators).map(([key, ind]) => (
-                  <div key={key} className="flex items-start gap-3">
-                    <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${CONTRIBUTION_COLORS[ind.contribution] || CONTRIBUTION_COLORS.context}`}>
-                      {ind.contribution}
-                    </span>
-                    <div className="flex-1">
-                      <p className="text-sm text-white">
-                        {ind.rate != null ? `${(ind.rate * 100).toFixed(1)}%` : ''}
-                        {ind.value != null ? `${ind.value.toFixed(2)}x` : ''}
-                        {ind.mortgage_rate != null ? `${ind.mortgage_rate}% rate · ${ind.market_temp}` : ''}
-                      </p>
-                      <p className="text-xs text-gray-500">{ind.source}</p>
+              <div className="space-y-4">
+                {Object.entries(result.indicators).map(([key, ind]) => {
+                  const info = INDICATOR_EXPLAIN[key]
+                  const explainText = info?.explain?.(ind.rate ?? ind.value, ind) || ''
+                  return (
+                    <div key={key} className="bg-gray-800/50 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${CONTRIBUTION_COLORS[ind.contribution] || CONTRIBUTION_COLORS.context}`}>
+                          {ind.contribution}
+                        </span>
+                        <span className="text-sm font-semibold text-white">
+                          {info?.title || key}
+                        </span>
+                        <span className="text-sm text-teal ml-auto font-mono">
+                          {ind.rate != null ? `${(ind.rate * 100).toFixed(1)}%` : ''}
+                          {ind.value != null ? `${ind.value.toFixed(2)}x` : ''}
+                          {ind.mortgage_rate != null ? `${ind.mortgage_rate}%` : ''}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 leading-relaxed">{explainText}</p>
+                      <p className="text-xs text-gray-600 mt-1 italic">Source: {ind.source}</p>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
