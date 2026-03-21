@@ -1,6 +1,11 @@
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
+[dev]
+  command    = "cd src/frontend && npm run dev"
+  targetPort = 5173
+  port       = 9000
+
 [build]
   command = "cd src/frontend && npm install && npm run build"
   publish = "src/frontend/dist"
