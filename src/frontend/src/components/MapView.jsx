@@ -152,7 +152,7 @@ export default function MapView({ onPolygonChange, onSearchError, result, search
       })
     })
 
-    return () => map.current?.remove()
+    return () => { map.current?.remove(); map.current = null }
   }, [])
 
   // Update cursor based on phase

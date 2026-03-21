@@ -57,3 +57,21 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 5. Update `netlify.toml` proxy URL with actual Render URL
 6. Netlify: New site → connect repo → Netlify auto-reads `netlify.toml`
 7. Netlify: Set `VITE_MAPBOX_TOKEN` in environment variables panel
+
+## 2026-03-21 — Local Dev: netlify dev + Vite proxy fix
+
+**What was built:** Full local development stack — `netlify dev` runs Vite frontend + JS Netlify functions simultaneously without Netlify build credits.
+
+**Why this approach:**
+- Netlify Dev (port 9000) proxies JS function invocations but has a MIME type bug on Windows for ES module scripts — browser blocks JS with empty Content-Type
+- Fix: Open Vite directly (port 5175/5176) and configure Vite's proxy to forward `/api` → `http://localhost:9000` (where functions run)
+- `npm install` inside `netlify/functions/` required — `@anthropic-ai/sdk` must be installed locally for dev (plugin only runs at Netlify deploy time)
+- `netlify.toml` `[dev]` command changed to `npm --prefix src/frontend run dev` for Windows path compatibility
+
+**Files changed:**
+- `netlify.toml` — `[dev]` command uses `npm --prefix`, port changed to 9000
+- `src/frontend/vite.config.js` — proxy `/api` → `http://localhost:9000` (was `localhost:8000` + path rewrite)
+- `src/frontend/src/components/MapView.jsx` — cleanup sets `map.current = null` to fix React StrictMode double-mount
+- `netlify/functions/package-lock.json` — generated after local `npm install`
+
+**Next:** Run `netlify dev` from project root → open `http://localhost:5176` (or whichever port Vite picks) for full local testing including Analyze Parcel.
