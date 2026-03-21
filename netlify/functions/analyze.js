@@ -464,167 +464,186 @@ function defaultSoil(lat, lon) {
 
 // ─── SOIL ZONES (SSURGO map unit polygons as GeoJSON) ────────────────────────
 //
-// Two-step approach for maximum reliability:
-// 1. Try SDA spatial query with proper WKT parsing (returns polygon geometries + properties)
-// 2. Fallback: query SDA for mukeys only, then fetch properties separately
-//
-// The WKT parser handles SQL Server's STAsText() output which uses:
-//   MULTIPOLYGON (((x y, x y, ...)), ((x y, ...)))
-//   POLYGON ((x y, x y, ...))
+// Strategy: Use SDA documented spatial function SDA_Get_Mupolygonkey, then
+// fetch geometries + properties. If spatial fails, build zones from point query.
 
 async function getSoilZones(polygon) {
   const [minX, minY, maxX, maxY] = polygonBounds(polygon.coordinates)
-  const buf = 0.002  // ~200m buffer for context
+  const [cx, cy] = polygonCentroid(polygon.coordinates)
+  const buf = 0.003  // ~300m buffer
 
-  // Step 1: Try SDA spatial query for polygon geometries
+  // Try 3 approaches in priority order
+  const result = await _soilZonesViaPolygonKeys(minX, minY, maxX, maxY, buf) ||
+                 await _soilZonesViaPointQuery(cx, cy, minX, minY, maxX, maxY, buf) ||
+                 { type: 'FeatureCollection', features: [] }
+  return result
+}
+
+// Approach 1: SDA documented spatial function → real polygon geometries
+async function _soilZonesViaPolygonKeys(minX, minY, maxX, maxY, buf) {
   try {
-    const bboxWkt = `POLYGON((${minX - buf} ${minY - buf}, ${maxX + buf} ${minY - buf}, ${maxX + buf} ${maxY + buf}, ${minX - buf} ${maxY + buf}, ${minX - buf} ${minY - buf}))`
+    const bboxWkt = `POLYGON((${minX-buf} ${minY-buf}, ${maxX+buf} ${minY-buf}, ${maxX+buf} ${maxY+buf}, ${minX-buf} ${maxY+buf}, ${minX-buf} ${minY-buf}))`
 
-    const sdaQuery = `
+    // Step 1: Get mupolygonkeys that intersect our bbox
+    const keyQuery = `SELECT * FROM SDA_Get_Mupolygonkey_from_intersection_with_WktWgs84('${bboxWkt}')`
+    const keyRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `query=${encodeURIComponent(keyQuery)}&format=JSON`,
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!keyRes.ok) return null
+    const keyData = await keyRes.json()
+    const keyRows = keyData?.Table || []
+    if (!keyRows.length) return null
+
+    // Limit to 20 polygons to keep response fast
+    const keys = keyRows.slice(0, 20).map(r => r.mupolygonkey || r.MupolygonKey).filter(Boolean)
+    if (!keys.length) return null
+
+    // Step 2: Fetch geometry + properties for those keys
+    const geomQuery = `
       SELECT
-        mupolygongeo.STAsText() AS geom_wkt,
-        mapunit.mukey, mapunit.muname, mapunit.musym,
-        muaggatt.hydgrpdcd AS hydgrp,
-        muaggatt.drclassdcd AS drainage,
-        muaggatt.wtdepannmin AS water_table_depth,
-        muaggatt.flodfreqdcd AS flood_freq,
-        muaggatt.slopegraddcp AS slope_gradient,
-        muaggatt.aws025wta AS avail_water_storage
-      FROM mupolygon
-      JOIN mapunit ON mupolygon.mukey = mapunit.mukey
-      LEFT JOIN muaggatt ON mapunit.mukey = muaggatt.mukey
-      WHERE mupolygongeo.STIntersects(
-        geometry::STGeomFromText('${bboxWkt}', 4326)
-      ) = 1
+        mupolygongeo.STAsText() AS wkt,
+        mp.mupolygonkey, mp.mukey,
+        mu.muname, mu.musym,
+        ma.hydgrpdcd AS hydgrp, ma.drclassdcd AS drainage,
+        ma.flodfreqdcd AS flood_freq, ma.wtdepannmin AS water_table_depth
+      FROM mupolygon mp
+      JOIN mapunit mu ON mp.mukey = mu.mukey
+      LEFT JOIN muaggatt ma ON mu.mukey = ma.mukey
+      WHERE mp.mupolygonkey IN (${keys.join(',')})
     `.trim()
 
-    const res = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+    const geomRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `query=${encodeURIComponent(sdaQuery)}&format=JSON`,
+      body: `query=${encodeURIComponent(geomQuery)}&format=JSON`,
       signal: AbortSignal.timeout(20000),
     })
+    if (!geomRes.ok) return null
+    const geomData = await geomRes.json()
+    const rows = geomData?.Table || []
+    if (!rows.length) return null
 
-    if (!res.ok) throw new Error(`SDA HTTP ${res.status}`)
-    const data = await res.json()
-    const rows = data?.Table || []
-
-    if (rows.length > 0) {
-      const features = []
-      for (const row of rows) {
-        if (!row.geom_wkt) continue
-        const geojson = wktToGeoJSON(row.geom_wkt)
-        if (!geojson) continue
-        features.push({
-          type: 'Feature',
-          properties: {
-            mukey: row.mukey, muname: row.muname || 'Unknown', musym: row.musym || '',
-            hydgrp: row.hydgrp || 'B', drainage: row.drainage || 'Well drained',
-            water_table_depth: row.water_table_depth, flood_freq: row.flood_freq || 'None',
-            slope_gradient: row.slope_gradient, avail_water_storage: row.avail_water_storage,
-          },
-          geometry: geojson,
-        })
-      }
-      if (features.length > 0) return { type: 'FeatureCollection', features }
-    }
-  } catch { /* fall through to alternative method */ }
-
-  // Step 2: Fallback — use SDA_Get_Mukey_from_intersection to get mukeys,
-  // then build simple rectangular zones from the parcel bbox
-  try {
-    const [cx, cy] = polygonCentroid(polygon.coordinates)
-    const muQuery = `SELECT mukey, muname, musym FROM mapunit WHERE mukey IN (SELECT * FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('POINT(${cx} ${cy})'))`
-    const muRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `query=${encodeURIComponent(muQuery)}&format=JSON`,
-      signal: AbortSignal.timeout(10000),
-    })
-    const muData = await muRes.json()
-    const muRows = muData?.Table || []
-    if (!muRows.length) return { type: 'FeatureCollection', features: [] }
-
-    // Get properties for each mukey
-    const mukeys = muRows.map(r => r.mukey).join(',')
-    const propQuery = `SELECT mukey, hydgrpdcd AS hydgrp, drclassdcd AS drainage, flodfreqdcd AS flood_freq, slopegraddcp AS slope_gradient FROM muaggatt WHERE mukey IN (${mukeys})`
-    const propRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `query=${encodeURIComponent(propQuery)}&format=JSON`,
-      signal: AbortSignal.timeout(10000),
-    })
-    const propData = await propRes.json()
-    const propMap = {}
-    for (const r of (propData?.Table || [])) propMap[r.mukey] = r
-
-    // Create simple polygon features spanning the parcel
-    const features = muRows.map((row, i) => {
-      const n = muRows.length
-      const sliceW = (maxX - minX + buf * 2) / n
-      const x0 = minX - buf + i * sliceW
-      const x1 = x0 + sliceW
-      const props = propMap[row.mukey] || {}
-      return {
+    const features = []
+    for (const row of rows) {
+      if (!row.wkt) continue
+      const geojson = wktToGeoJSON(row.wkt)
+      if (!geojson) continue
+      features.push({
         type: 'Feature',
         properties: {
           mukey: row.mukey, muname: row.muname || 'Unknown', musym: row.musym || '',
+          hydgrp: row.hydgrp || 'B', drainage: row.drainage || 'Well drained',
+          flood_freq: row.flood_freq || 'None', water_table_depth: row.water_table_depth,
+        },
+        geometry: geojson,
+      })
+    }
+    return features.length > 0 ? { type: 'FeatureCollection', features } : null
+  } catch { return null }
+}
+
+// Approach 2: Point query for mukeys → build approximate zones
+async function _soilZonesViaPointQuery(cx, cy, minX, minY, maxX, maxY, buf) {
+  try {
+    // Query multiple points across the parcel for better coverage
+    const pts = [
+      [cx, cy],
+      [minX + (maxX-minX)*0.25, minY + (maxY-minY)*0.25],
+      [minX + (maxX-minX)*0.75, minY + (maxY-minY)*0.75],
+    ]
+    const allMukeys = new Map()  // mukey → muname
+
+    for (const [px, py] of pts) {
+      try {
+        const q = `SELECT mukey, muname, musym FROM mapunit WHERE mukey IN (SELECT * FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('POINT(${px} ${py})'))`
+        const res = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `query=${encodeURIComponent(q)}&format=JSON`,
+          signal: AbortSignal.timeout(8000),
+        })
+        const data = await res.json()
+        for (const r of (data?.Table || [])) {
+          if (r.mukey && !allMukeys.has(r.mukey)) allMukeys.set(r.mukey, { muname: r.muname, musym: r.musym })
+        }
+      } catch { /* continue */ }
+    }
+
+    if (allMukeys.size === 0) return null
+
+    // Get properties for all mukeys
+    const mukeyList = [...allMukeys.keys()].join(',')
+    const propQ = `SELECT mukey, hydgrpdcd AS hydgrp, drclassdcd AS drainage, flodfreqdcd AS flood_freq FROM muaggatt WHERE mukey IN (${mukeyList})`
+    let propMap = {}
+    try {
+      const propRes = await fetch('https://sdmdataaccess.sc.egov.usda.gov/Tabular/post.rest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `query=${encodeURIComponent(propQ)}&format=JSON`,
+        signal: AbortSignal.timeout(8000),
+      })
+      const propData = await propRes.json()
+      for (const r of (propData?.Table || [])) propMap[r.mukey] = r
+    } catch { /* use defaults */ }
+
+    // Build rectangular slices across parcel
+    const mukeys = [...allMukeys.entries()]
+    const n = mukeys.length
+    const features = mukeys.map(([mukey, info], i) => {
+      const sliceW = (maxX - minX + buf * 2) / n
+      const x0 = minX - buf + i * sliceW
+      const x1 = x0 + sliceW
+      const props = propMap[mukey] || {}
+      return {
+        type: 'Feature',
+        properties: {
+          mukey, muname: info.muname || 'Unknown', musym: info.musym || '',
           hydgrp: props.hydgrp || 'B', drainage: props.drainage || 'Well drained',
-          flood_freq: props.flood_freq || 'None', slope_gradient: props.slope_gradient,
-          approximate: true,
+          flood_freq: props.flood_freq || 'None', approximate: true,
         },
         geometry: {
           type: 'Polygon',
-          coordinates: [[[x0, minY - buf], [x1, minY - buf], [x1, maxY + buf], [x0, maxY + buf], [x0, minY - buf]]],
+          coordinates: [[[x0, minY-buf], [x1, minY-buf], [x1, maxY+buf], [x0, maxY+buf], [x0, minY-buf]]],
         },
       }
     })
     return { type: 'FeatureCollection', features }
-  } catch (e) {
-    return { type: 'FeatureCollection', features: [], error: e.message }
-  }
+  } catch { return null }
 }
 
-// Parse WKT MULTIPOLYGON/POLYGON to GeoJSON geometry
-// Handles SQL Server spatial STAsText() output with variable whitespace
+// Parse WKT to GeoJSON — handles SQL Server STAsText() with variable whitespace
 function wktToGeoJSON(wkt) {
   try {
-    // Normalize whitespace
     wkt = wkt.trim()
 
+    // Extract coordinate rings from within parens
+    function parseRing(str) {
+      return str.replace(/^\(+/, '').replace(/\)+$/, '').split(/\s*,\s*/).map(pt => {
+        const [x, y] = pt.trim().split(/\s+/).map(Number)
+        return [x, y]
+      }).filter(c => !isNaN(c[0]) && !isNaN(c[1]))
+    }
+
     if (wkt.startsWith('MULTIPOLYGON')) {
-      // Strip "MULTIPOLYGON" and outermost parens
-      let inner = wkt.replace(/^MULTIPOLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
-      // Split on ")),((" to separate individual polygons
-      const polyStrings = inner.split(/\)\s*,\s*\(/)
-      const polygons = polyStrings.map(ps => {
-        // Clean remaining parens and split into rings
-        ps = ps.replace(/^\(+/, '').replace(/\)+$/, '')
-        const ringStrings = ps.split(/\)\s*,\s*\(/)
-        return ringStrings.map(rs => {
-          rs = rs.replace(/^\(+/, '').replace(/\)+$/, '')
-          return rs.split(/\s*,\s*/).map(pt => {
-            const parts = pt.trim().split(/\s+/)
-            return [parseFloat(parts[0]), parseFloat(parts[1])]
-          })
-        })
+      const inner = wkt.replace(/^MULTIPOLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
+      const polyParts = inner.split(/\)\s*\)\s*,\s*\(\s*\(/)
+      const polygons = polyParts.map(pp => {
+        pp = pp.replace(/^\(+/, '').replace(/\)+$/, '')
+        const ringParts = pp.split(/\)\s*,\s*\(/)
+        return ringParts.map(parseRing)
       })
       return { type: 'MultiPolygon', coordinates: polygons }
     }
 
     if (wkt.startsWith('POLYGON')) {
-      let inner = wkt.replace(/^POLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
-      const ringStrings = inner.split(/\)\s*,\s*\(/)
-      const rings = ringStrings.map(rs => {
-        rs = rs.replace(/^\(+/, '').replace(/\)+$/, '')
-        return rs.split(/\s*,\s*/).map(pt => {
-          const parts = pt.trim().split(/\s+/)
-          return [parseFloat(parts[0]), parseFloat(parts[1])]
-        })
-      })
+      const inner = wkt.replace(/^POLYGON\s*\(\s*/, '').replace(/\s*\)\s*$/, '')
+      const ringParts = inner.split(/\)\s*,\s*\(/)
+      const rings = ringParts.map(parseRing)
       return { type: 'Polygon', coordinates: rings }
     }
-
     return null
   } catch { return null }
 }
