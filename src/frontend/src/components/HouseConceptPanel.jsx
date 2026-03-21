@@ -18,6 +18,7 @@ export default function HouseConceptPanel({ address, siteData }) {
   const [bedrooms, setBedrooms]     = useState(2)
   const [bathrooms, setBathrooms]   = useState(2)
   const [stories, setStories]       = useState(1)
+  const [location, setLocation]     = useState(address || 'Phoenix, AZ')
   const [quality, setQuality]       = useState('mid')
   const [useSiteData, setUseSiteData] = useState(false)
   const [loading, setLoading]       = useState(false)
@@ -29,7 +30,7 @@ export default function HouseConceptPanel({ address, siteData }) {
     setLoading(true)
     setError(null)
     try {
-      const params = { bedrooms, bathrooms, stories, location: address || '', quality }
+      const params = { bedrooms, bathrooms, stories, location: location || 'Phoenix, AZ', quality }
       if (useSiteData && siteData) {
         params.siteData = {
           soil: siteData.soil,
@@ -110,9 +111,10 @@ export default function HouseConceptPanel({ address, siteData }) {
             Location
             <input
               type="text"
-              defaultValue={address || ''}
-              readOnly
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white opacity-70"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              placeholder="City, State or address"
+              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-teal"
             />
           </label>
         </div>
@@ -156,6 +158,11 @@ export default function HouseConceptPanel({ address, siteData }) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {result.layouts.map((layout, i) => {
                   const isBest = result.layouts.every(l => layout.score >= l.score)
+                  const costLow = layout.cost?.range?.low ?? 0
+                  const costHigh = layout.cost?.range?.high ?? 0
+                  const roomList = Array.isArray(layout.rooms)
+                    ? layout.rooms.map(r => r.name || r).join(', ')
+                    : layout.rooms || ''
                   return (
                     <div
                       key={i}
@@ -172,16 +179,17 @@ export default function HouseConceptPanel({ address, siteData }) {
                         )}
                       </div>
                       <div className="text-xs text-gray-400">
-                        {layout.total_sf?.toLocaleString()} SF
+                        {(layout.totalSF || layout.total_sf || 0).toLocaleString()} SF
+                        {layout.cost?.costPerSF ? ` · $${layout.cost.costPerSF}/SF` : ''}
                       </div>
                       <div className="text-sm font-semibold text-teal">
-                        ${layout.cost_low?.toLocaleString()} &ndash; ${layout.cost_high?.toLocaleString()}
+                        ${costLow.toLocaleString()} &ndash; ${costHigh.toLocaleString()}
                       </div>
-                      {layout.rooms && (
-                        <p className="text-xs text-gray-500 leading-tight">{layout.rooms}</p>
+                      {roomList && (
+                        <p className="text-xs text-gray-500 leading-tight">{roomList}</p>
                       )}
-                      {layout.structural && (
-                        <p className="text-xs text-gray-500 italic">{layout.structural}</p>
+                      {layout.structuralSystem && (
+                        <p className="text-xs text-gray-500 italic">{layout.structuralSystem}</p>
                       )}
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-gray-500">Score</span>
@@ -194,13 +202,24 @@ export default function HouseConceptPanel({ address, siteData }) {
             </>
           )}
 
+          {/* Structural notes */}
+          {result.structuralNotes?.length > 0 && (
+            <div className="bg-gray-800 rounded-lg p-3">
+              <h3 className="text-xs font-semibold text-gray-400 mb-1">Structural Notes</h3>
+              <ul className="text-xs text-gray-400 list-disc list-inside space-y-0.5">
+                {result.structuralNotes.map((note, i) => <li key={i}>{note}</li>)}
+              </ul>
+            </div>
+          )}
+
           {/* Cost comparison bar */}
           {result.layouts && (
             <div className="space-y-1">
               <h3 className="text-xs font-semibold text-gray-400">Cost Comparison</h3>
               {result.layouts.map((layout, i) => {
-                const maxCost = Math.max(...result.layouts.map(l => l.cost_high || 0))
-                const pct = maxCost > 0 ? ((layout.cost_high || 0) / maxCost) * 100 : 0
+                const costHigh = layout.cost?.range?.high ?? 0
+                const maxCost = Math.max(...result.layouts.map(l => l.cost?.range?.high ?? 0))
+                const pct = maxCost > 0 ? (costHigh / maxCost) * 100 : 0
                 return (
                   <div key={i} className="flex items-center gap-2">
                     <span className="text-xs text-gray-400 w-20 shrink-0">{layout.name}</span>
@@ -211,7 +230,7 @@ export default function HouseConceptPanel({ address, siteData }) {
                       />
                     </div>
                     <span className="text-xs text-gray-400 w-20 text-right">
-                      ${(layout.cost_high / 1000).toFixed(0)}k
+                      ${(costHigh / 1000).toFixed(0)}k
                     </span>
                   </div>
                 )
@@ -220,11 +239,11 @@ export default function HouseConceptPanel({ address, siteData }) {
           )}
 
           {/* AI Summary */}
-          {result.summary && (
+          {result.aiSummary && (
             <div className="bg-gray-800 rounded-lg p-4">
               <h3 className="text-xs font-semibold text-gray-400 mb-2">AI Summary</h3>
               <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-                {result.summary}
+                {result.aiSummary}
               </p>
             </div>
           )}
