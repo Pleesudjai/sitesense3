@@ -150,3 +150,16 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `src/frontend/src/api.js` — estimateHouseConcept() + askEngineering()
 - `netlify.toml` — 2 new redirects + timeouts
 **Next:** Set ANTHROPIC_API_KEY for AI summaries, test all 3 tabs end-to-end, UI polish, pitch deck prep
+
+---
+
+## 2026-03-21 — Price Forecast: Government-Data-Driven Cost Prediction
+**What was built:** Multi-factor construction cost prediction model using 6 government data sources: Census CHARS benchmark base ($/SF by house type), BEA Regional Price Parities (metro/state localization), BLS PPI residential construction inputs (materials inflation), BLS ECI (labor cost escalation), FHFA House Price Index (market trend with mean-reversion damping), and Philadelphia Fed SPF (forward inflation prior). Returns current estimate + 1/2/5/10-year forecast ranges with widening uncertainty bands. Frontend shows visual timeline bars, detailed projection table, indicator breakdown with contribution labels, and full source attribution. 4th tab added: Site Analysis | House Concept | Price Forecast | Engineering Q&A.
+**Why this approach:** The spec called for layered forecasting (not a single inflation number). Hardcoded recent indicator values for hackathon speed — the MODEL LOGIC is what matters, not live API fetching. Blended rate (60% materials PPI + 40% labor ECI) is more accurate than flat ENR CCI. Mean-reversion damping on FHFA HPI prevents unrealistic long-term extrapolation. Bands widen with sqrt(year) to reflect growing uncertainty. All sources are official government data (BEA, BLS, Census, FHFA, Fed) — no proprietary data needed.
+**Files changed:**
+- `netlify/functions/price_predict.js` — new: prediction model with hardcoded indicator stack
+- `src/frontend/src/components/PriceForecastPanel.jsx` — new: form + timeline + table + indicators + sources
+- `src/frontend/src/App.jsx` — 4th tab (Price Forecast), shared address
+- `src/frontend/src/api.js` — predictPrice()
+- `netlify.toml` — redirect + timeout for price_predict
+**Next:** End-to-end test all 4 tabs, set ANTHROPIC_API_KEY, pitch deck
