@@ -28,6 +28,7 @@ export default function App() {
   const [searchError, setSearchError] = useState(null)
   const [houseResult, setHouseResult] = useState(null)
   const [forecastResult, setForecastResult] = useState(null)
+  const [userType, setUserType] = useState('homeowner')
 
   // Use the search address text as location for all tabs
   // Falls back to polygon centroid coordinates if no address typed
@@ -104,6 +105,15 @@ export default function App() {
               🔍
             </button>
           </div>
+          <select
+            value={userType}
+            onChange={e => setUserType(e.target.value)}
+            className="bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-sm"
+          >
+            <option value="homeowner">Homeowner</option>
+            <option value="architect">Architect</option>
+            <option value="developer">Developer</option>
+          </select>
           <button
             onClick={handleAnalyze}
             disabled={!polygon || loading}
@@ -230,6 +240,15 @@ export default function App() {
                       }`}>
                         <p className="text-sm font-bold text-white">{result.ai_report.verdict}</p>
                         <p className="text-xs text-gray-300 mt-1">{result.ai_report.verdict_reason}</p>
+                        {result.ai_report.top_reasons?.length > 0 && (
+                          <div className="mt-1">
+                            {result.ai_report.top_reasons.map((r, i) => (
+                              <p key={i} className="text-xs text-gray-400 flex gap-1.5 items-start">
+                                <span className="text-amber-500 shrink-0">•</span> {r}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Tradeoffs */}
@@ -406,6 +425,54 @@ export default function App() {
                           </div>
                         </div>
                         )})()}
+
+                      {/* Confidence & Provenance */}
+                      {result.evidence_pack && (
+                        <div className="bg-gray-700/20 rounded p-2 mt-2">
+                          <h3 className="text-[10px] font-semibold text-gray-500 mb-1">Data Confidence</h3>
+                          <div className="flex flex-wrap gap-1">
+                            {Object.entries(result.evidence_pack.confidence || {}).filter(([k]) => k !== 'overall').map(([key, level]) => (
+                              <span key={key} className={`text-[9px] px-1.5 py-0.5 rounded ${
+                                level === 'verified' ? 'bg-green-900/40 text-green-400' :
+                                level === 'partially_verified' ? 'bg-yellow-900/40 text-yellow-400' :
+                                level === 'heuristic' ? 'bg-blue-900/40 text-blue-400' :
+                                'bg-red-900/40 text-red-400'
+                              }`}>
+                                {key}: {level.replace('_', ' ')}
+                              </span>
+                            ))}
+                          </div>
+                          {result.evidence_pack.provenance && (
+                            <p className="text-[9px] text-gray-600 mt-1">
+                              {result.evidence_pack.provenance.gis_layers_queried} GIS layers ·
+                              {result.evidence_pack.provenance.ai_engine} ·
+                              {new Date(result.evidence_pack.provenance.generated_at).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Assumptions */}
+                      {result.evidence_pack?.assumptions?.length > 0 && (
+                        <div className="bg-gray-700/20 rounded p-2 mt-1">
+                          <h3 className="text-[10px] font-semibold text-gray-500 mb-1">Assumptions Made</h3>
+                          <ul className="text-[9px] text-gray-500 list-disc list-inside space-y-0.5">
+                            {result.evidence_pack.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Overall Confidence Summary */}
+                      {result.ai_report?.confidence_summary && (
+                        <div className={`rounded p-2 text-xs mt-1 ${
+                          result.ai_report.confidence_summary.overall === 'verified' ? 'bg-green-950/20 text-green-400' :
+                          result.ai_report.confidence_summary.overall === 'partially_verified' ? 'bg-amber-950/20 text-amber-400' :
+                          'bg-red-950/20 text-red-400'
+                        }`}>
+                          <span className="font-semibold">Overall confidence: {result.ai_report.confidence_summary.overall?.replace('_',' ')}</span>
+                          <p className="text-[10px] opacity-70 mt-0.5">{result.ai_report.confidence_summary.reason}</p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     // Fallback: render as raw text (backward compatibility)

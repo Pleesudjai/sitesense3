@@ -1139,9 +1139,181 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
   }
 }
 
+// ─── EVIDENCE PACK ASSEMBLY ─────────────────────────────────────────────────
+
+function assembleEvidencePack(address, polygon, elevData, slopeData, cutFill, floodData, soilData, seismicData, fireData, wetlandsData, precipData, contamData, hydroData, speciesData, historicData, landslideData, slrData, foundationType, foundationCode, sdc, loads, runoff, costs, buildableSf) {
+  const areaAcres = elevData?.area_acres || 0
+  const buildablePct = areaAcres > 0 ? Math.round((buildableSf / (areaAcres * 43560)) * 100) : 0
+
+  return {
+    parcel: {
+      address: address || 'User-selected parcel',
+      area_acres: areaAcres,
+      buildable_sf: Math.round(buildableSf),
+      buildable_pct: buildablePct,
+      centroid: { lat: elevData?.center_lat, lon: elevData?.center_lon },
+    },
+
+    retrieval: {
+      elevation: {
+        avg_ft: elevData?.avg_elevation_ft, min_ft: elevData?.min_ft, max_ft: elevData?.max_ft,
+        relief_ft: elevData?.relief_ft, grid_size: elevData?.grid_size,
+        source: 'USGS 3DEP', query_mode: 'grid_sampling', confidence: 'verified',
+      },
+      flood: {
+        zone: floodData?.zone, risk_level: floodData?.risk_level, bfe_ft: floodData?.bfe_ft,
+        source: 'FEMA NFHL', query_mode: 'centroid_point', confidence: floodData?.zone === 'X' ? 'verified' : 'partially_verified',
+        note: floodData?.zone !== 'X' ? 'Centroid query only — parcel-wide flood overlap not yet computed. Survey verification recommended.' : null,
+      },
+      soil: {
+        texture_class: soilData?.texture_class, uscs_estimate: soilData?.uscs_estimate,
+        shrink_swell: soilData?.shrink_swell, expansive_risk: soilData?.expansive_risk,
+        bearing_psf: soilData?.presumptive_bearing_psf, caliche: soilData?.caliche,
+        drainage_class: soilData?.drainage_class, hydrologic_group: soilData?.hydrologic_group,
+        liquid_limit: soilData?.liquid_limit, plasticity_index: soilData?.plasticity_index,
+        collapsible: soilData?.collapsible, liquefiable: soilData?.liquefiable, organic: soilData?.organic,
+        corrosion_concrete: soilData?.corrosion_concrete, corrosion_steel: soilData?.corrosion_steel,
+        source: 'USDA SoilWeb + SDA', query_mode: 'centroid_dominant_component',
+        confidence: soilData?.series_name === 'Unknown' ? 'fallback' : 'partially_verified',
+        note: 'Screening-level only. Geotechnical boring required for design.',
+      },
+      seismic: {
+        sds: seismicData?.sds, sd1: seismicData?.sd1, sdc: sdc,
+        ss: seismicData?.ss, s1: seismicData?.s1, wind_mph: seismicData?.wind_mph,
+        source: 'USGS NSHM', query_mode: 'design_maps_api', confidence: seismicData?.sds ? 'verified' : 'fallback',
+      },
+      fire: {
+        risk_class: fireData?.risk_class, wui_zone: fireData?.wui_zone,
+        source: 'Rule-based (15 US zones)', query_mode: 'bbox_lookup', confidence: 'heuristic',
+      },
+      wetlands: {
+        present: wetlandsData?.present, coverage_pct: wetlandsData?.coverage_pct,
+        wetland_types: wetlandsData?.wetland_types,
+        source: 'USFWS NWI', query_mode: 'envelope_intersection', confidence: 'partially_verified',
+        note: wetlandsData?.present ? 'NWI is not a jurisdictional delineation. Field survey required.' : null,
+      },
+      precipitation: {
+        annual_in: precipData?.annual_precip_in, intensity_10yr: precipData?.intensity_10yr_1hr_in,
+        source: precipData?.source || 'NOAA Atlas 14', confidence: precipData?.fallback ? 'fallback' : 'verified',
+      },
+      contamination: {
+        sites_nearby: contamData?.sites_nearby || 0, nearest_distance_mi: contamData?.nearest_distance_mi,
+        source: 'EPA Envirofacts', confidence: contamData?.sites_nearby > 0 ? 'partially_verified' : 'verified',
+      },
+      hydrography: {
+        streams_nearby: hydroData?.features_count || 0, nearest_stream: hydroData?.nearest_name,
+        source: 'USGS NHD', confidence: 'verified',
+      },
+      endangered_species: {
+        species_found: speciesData?.species_count || 0,
+        source: 'USFWS Critical Habitat', confidence: 'partially_verified',
+      },
+      historic_sites: {
+        sites_found: historicData?.sites_count || 0,
+        source: 'NPS National Register', confidence: 'partially_verified',
+      },
+      landslide: {
+        risk_level: landslideData?.risk_level,
+        source: 'Rule-based estimate', confidence: 'heuristic',
+      },
+      sea_level_rise: {
+        coastal: slrData?.coastal, risk_level: slrData?.risk_level,
+        source: 'NOAA SLR', confidence: slrData?.coastal ? 'partially_verified' : 'verified',
+      },
+    },
+
+    computed: {
+      slope: {
+        avg_pct: slopeData?.avg_slope_pct, max_pct: slopeData?.max_slope_pct,
+        steep_fraction_pct: slopeData?.steep_fraction_pct,
+      },
+      cut_fill: {
+        cut_cy: cutFill?.cut_cy, fill_cy: cutFill?.fill_cy, net_cy: cutFill?.net_cy,
+      },
+      foundation: {
+        type: foundationType, code_ref: foundationCode,
+        reasoning: `Selected based on: ${soilData?.shrink_swell === 'High' ? 'expansive soil (ACI 360R-10 §5.4)' : soilData?.caliche ? 'caliche hardpan (ACI 360R-10 §4.2)' : floodData?.zone !== 'X' ? 'flood zone requirements (ASCE 7-22 Ch.5)' : 'standard conditions (ACI 360R-10)'}`,
+      },
+      loads: {
+        wind_pressure_psf: loads?.wind_pressure_psf, wind_mph: loads?.wind_mph || seismicData?.wind_mph,
+        snow_psf: loads?.snow_psf, seismic_sdc: sdc,
+        cost_multiplier: loads?.cost_multiplier,
+      },
+      runoff: {
+        peak_cfs: runoff?.peak_cfs, detention_needed: runoff?.detention_needed,
+        runoff_coeff: runoff?.runoff_coeff,
+      },
+      costs: {
+        total_now: costs?.total_now, breakdown: costs?.breakdown,
+        projections: costs?.projections,
+        regional_multiplier: costs?.regional_multiplier,
+      },
+      buildable_area: {
+        total_sf: Math.round(buildableSf),
+        pct_of_parcel: buildablePct,
+        constraints_applied: ['setbacks', 'steep_slope', wetlandsData?.present ? 'wetlands' : null, slopeData?.steep_fraction_pct > 10 ? 'steep_areas' : null].filter(Boolean),
+      },
+    },
+
+    doctrine: {
+      codes_applied: [
+        'IBC 2021 §1803 (Soils), §1806 (Bearing), §1808 (Foundations)',
+        'ASCE 7-22 Ch.12 (Seismic), Ch.26-27 (Wind), Ch.5 (Flood), Ch.7 (Snow)',
+        'ACI 360R-10 §5.4 (PT slab), §4.2 (Grade beams)',
+        'ACI 350-20 (Environmental concrete)',
+      ],
+      foundation_ladder: 'organic→deep_pile, flood_AE→elevated, slope>30%→caisson, expansive→PT_slab, caliche→grade_beams, default→conventional_slab',
+      triggered_rules: [
+        soilData?.shrink_swell === 'High' ? 'ACI 360R-10 §5.4: PT slab for expansive soil' : null,
+        soilData?.caliche ? 'ACI 360R-10 §4.2: Grade beams for caliche' : null,
+        ['AE','VE','A','AO'].includes(floodData?.zone) ? 'ASCE 7-22 Ch.5: Elevated construction for flood zone' : null,
+        sdc === 'D' || sdc === 'E' || sdc === 'F' ? `ASCE 7-22 Ch.12: Seismic detailing for SDC ${sdc}` : null,
+        soilData?.corrosion_concrete === 'High' ? 'ACI 318-19 Table 19.3.1.1: Sulfate-resistant cement' : null,
+      ].filter(Boolean),
+    },
+
+    assumptions: [
+      'Setback buffer estimated at 20ft front / 5ft sides / 5ft rear (typical residential). Actual setbacks depend on local zoning.',
+      soilData?.series_name === 'Unknown' ? 'Soil data unavailable — using generic regional defaults.' : null,
+      !precipData?.intensity_10yr_1hr_in ? 'Rainfall intensity estimated from regional average — NOAA Atlas 14 lookup was unavailable.' : null,
+      'Cost estimates use ENR CCI 4.5%/year inflation (2015-2024 average).',
+      'Wind speed from ASCE 7-22 regional lookup — local wind study may differ.',
+    ].filter(Boolean),
+
+    unknowns: [
+      'Geotechnical boring not performed — soil data is screening-level only.',
+      'Utility availability and extension costs not confirmed.',
+      'Topographic survey not performed — elevation data is from USGS 3DEP (~3m resolution).',
+      wetlandsData?.present ? 'NWI wetland mapping is not jurisdictional — field delineation required.' : null,
+      ['AE','VE'].includes(floodData?.zone) ? 'Exact flood boundary requires licensed surveyor verification.' : null,
+      contamData?.sites_nearby > 0 ? 'Environmental site assessment (Phase I ESA) recommended due to nearby contamination sites.' : null,
+      'Zoning and land use restrictions not yet verified with local jurisdiction.',
+    ].filter(Boolean),
+
+    provenance: {
+      generated_at: new Date().toISOString(),
+      gis_layers_queried: 14,
+      computation_engine: 'SiteSense v1.0 (deterministic)',
+      ai_engine: process.env.ANTHROPIC_API_KEY ? 'claude-sonnet-4-6' : 'rule-based fallback',
+    },
+
+    confidence: {
+      elevation: 'verified',
+      flood: floodData?.zone === 'X' ? 'verified' : 'partially_verified',
+      soil: soilData?.series_name === 'Unknown' ? 'fallback' : 'partially_verified',
+      seismic: seismicData?.sds ? 'verified' : 'fallback',
+      fire: 'heuristic',
+      wetlands: wetlandsData?.present ? 'partially_verified' : 'verified',
+      buildable_envelope: 'heuristic',
+      cost_estimate: 'heuristic',
+      overall: 'partially_verified',
+    },
+  }
+}
+
 // ─── RULE-BASED REPORT (fallback — no Claude API needed) ────────────────────
 
-function generateRuleBasedReport(summary, gisData) {
+function generateRuleBasedReport(summary, gisData, evidencePack) {
   // Count high-risk factors
   const risks = []
   if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) risks.push('flood zone ' + summary.flood_zone)
@@ -1236,10 +1408,18 @@ function generateRuleBasedReport(summary, gisData) {
   return {
     verdict,
     verdict_reason,
+    top_reasons: risks.slice(0, 3).map(r => `${r.charAt(0).toUpperCase() + r.slice(1)} affects site feasibility and may increase costs`),
+    confidence_summary: {
+      overall: evidencePack?.confidence?.overall || 'partially_verified',
+      reason: evidencePack?.confidence?.soil === 'fallback'
+        ? 'Key soil data is from defaults — geotechnical investigation needed for verification.'
+        : 'Core data is from government sources. Subsurface and utility confirmation still pending.',
+    },
     tradeoffs,
     best_fit_concept,
     scenario_comparison,
-    unknowns,
+    unknowns: evidencePack?.unknowns || unknowns,
+    assumptions: evidencePack?.assumptions || [],
     next_steps,
     site_design,
   }
@@ -1247,32 +1427,31 @@ function generateRuleBasedReport(summary, gisData) {
 
 // ─── CLAUDE AI BRAIN REPORT ─────────────────────────────────────────────────
 
-async function generateAiBrainReport(summary, gisData) {
+async function generateAiBrainReport(summary, gisData, evidencePack) {
   const apiKey = process.env.ANTHROPIC_API_KEY
 
   // Try Claude first, fall back to rule-based
   if (!apiKey) {
     console.log('No ANTHROPIC_API_KEY — using rule-based report')
-    return generateRuleBasedReport(summary, gisData)
+    return generateRuleBasedReport(summary, gisData, evidencePack)
   }
 
   const client = new Anthropic({ apiKey })
 
   const prompt = `You are SiteSense Parcel Strategist — a civil engineering AI consultant specializing in early-stage land feasibility. You synthesize multiple data signals into judgments, identify tradeoffs, detect unknowns, and prepare professional handoff briefs.
 
-ENGINEERING DOCTRINE:
-- IBC 2021: §1803 Soils, §1806 Bearing (Table 1806.2), §1808 Foundations
-- ASCE 7-22: Ch.12 Seismic, Ch.26-27 Wind, Ch.5 Flood, Ch.7 Snow
-- ACI 360R-10: §5.4 PT slab for expansive soils, §4.2 grade beams
-- Foundation priority: organic→deep pile, flood AE→elevated, slope>30%→caisson, expansive→PT slab, caliche→grade beams, default→conventional slab
-
-SITE DATA:
-${JSON.stringify(summary)}
+EVIDENCE PACK:
+${JSON.stringify(evidencePack, null, 2)}
 
 Respond with ONLY valid JSON matching this exact structure:
 {
   "verdict": "Good Candidate" or "Proceed with Caution" or "High Risk",
   "verdict_reason": "One sentence connecting 2-3 data signals to explain the verdict",
+  "top_reasons": ["Top 2-3 factors driving the verdict"],
+  "confidence_summary": {
+    "overall": "verified or partially_verified or fallback",
+    "reason": "One sentence explaining confidence level"
+  },
   "tradeoffs": ["Each string explains a tension between two data signals"],
   "best_fit_concept": "What type of building makes most sense and why",
   "scenario_comparison": {
@@ -1280,6 +1459,7 @@ Respond with ONLY valid JSON matching this exact structure:
     "concept_options": "Compare building approaches if relevant"
   },
   "unknowns": ["Things still needing professional verification"],
+  "assumptions": ["Key assumptions underlying this analysis"],
   "next_steps": [
     {"action": "What to do", "who": "Professional type", "why": "Reason this matters"}
   ],
@@ -1305,11 +1485,11 @@ Respond with ONLY valid JSON matching this exact structure:
     } catch {
       // Claude returned non-JSON — wrap it
       console.warn('Claude returned non-JSON, falling back to rule-based')
-      return generateRuleBasedReport(summary, gisData)
+      return generateRuleBasedReport(summary, gisData, evidencePack)
     }
   } catch (e) {
     console.error('Claude API failed, falling back to rule-based:', e.message)
-    return generateRuleBasedReport(summary, gisData)
+    return generateRuleBasedReport(summary, gisData, evidencePack)
   }
 }
 
@@ -1825,7 +2005,15 @@ exports.handler = async (event) => {
       summary.slope_direction = 'south'
     }
 
-    const aiReport = await generateAiBrainReport(summary, { elevData, slopeData, floodData, wetlandsData, soilData })
+    // Assemble evidence pack
+    const evidencePack = assembleEvidencePack(
+      address, polygon, elevData, slopeData, cutFill, floodData, soilData,
+      seismicData, fireData, wetlandsData, precipData, contamData, hydroData,
+      speciesData, historicData, landslideData, slrData,
+      foundationType, foundationCode, sdc, loads, runoff, costs, buildableSf
+    )
+
+    const aiReport = await generateAiBrainReport(summary, { elevData, slopeData, floodData, wetlandsData, soilData }, evidencePack)
 
     return {
       statusCode: 200,
@@ -1843,6 +2031,7 @@ exports.handler = async (event) => {
           loads, runoff,
           buildable_sf: Math.round(buildableSf),
           costs, summary,
+          evidence_pack: evidencePack,
           report_text: typeof aiReport === 'string' ? aiReport : JSON.stringify(aiReport),
           ai_report: aiReport,
         },
