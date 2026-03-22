@@ -64,17 +64,18 @@ function median(arr) {
 
 // ─── ELEVATION (USGS 3DEP) ───────────────────────────────────────────────────
 
-async function queryElevation(lon, lat) {
-  try {
-    const url = `https://epqs.nationalmap.gov/v1/json?x=${lon}&y=${lat}&units=Feet&includeDate=false`
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return null
-    const data = await res.json()
-    const val = parseFloat(data.value)
-    return isNaN(val) || val < -900 ? null : val
-  } catch {
-    return null
+async function queryElevation(lon, lat, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const url = `https://epqs.nationalmap.gov/v1/json?x=${lon}&y=${lat}&units=Feet&includeDate=false`
+      const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
+      if (!res.ok) continue
+      const data = await res.json()
+      const val = parseFloat(data.value)
+      if (!isNaN(val) && val > -900) return val
+    } catch { /* retry */ }
   }
+  return null
 }
 
 async function getElevationGrid(polygon, gridSize = 10) {
