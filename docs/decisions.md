@@ -187,3 +187,23 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Files changed:** analyze.js, house_estimate.js, engineering_assist.js, price_predict.js, App.jsx, MapView.jsx, FloorPlanView.jsx, HouseConceptPanel.jsx, PriceForecastPanel.jsx, CostTable.jsx, ReportGenerator.jsx, ReportButton.jsx, netlify.toml
 
 **Next:** Set ANTHROPIC_API_KEY in new Netlify account, end-to-end test all 4 tabs + PDF, demo prep
+
+---
+
+## 2026-03-21 — AI Brain Architecture + Site-Responsive Design + PDF Redesign
+
+**What was built:**
+
+1. **AI Brain Architecture (Domain Brain pattern):** Replaced one-shot "write a summary" Claude call with structured reasoning pipeline. Identity layer (Parcel Strategist role), doctrine layer (IBC/ASCE/ACI code rules injected), signal synthesis (cross-reference 14 GIS layers for conflicts), scenario reasoning (build now vs wait), unknown detection (flags missing geotech, utilities, survey), user-adaptive output, professional handoff brief with WHO to contact. Returns structured JSON: verdict, tradeoffs, best_fit_concept, scenario_comparison, unknowns, next_steps, site_design. Rule-based fallback generates identical JSON structure without API key.
+
+2. **Site-Responsive Design:** Climate-aware building recommendations from terrain + latitude + state. Pad selection (flattest zone from elevation grid), orientation (solar angle by climate zone: hot_arid/hot_humid/cold/temperate), window strategy per facade (minimize west in hot climates, maximize south in cold), room zoning (living on best daylight, services as thermal buffer), driveway access from slope analysis.
+
+3. **PDF Report Complete Redesign:** 4-page user-pain-first report. Page 1: verdict banner + callout cards + risk traffic-light. Page 2: plain-English constraints with "What to check next" callouts. Page 3: side-by-side costs + build-now-vs-wait + next steps with WHO to contact. Page 4: 3-column appendix with dynamic "What This Means" explanations (18 helper functions). House Concept page: Standard-only with cost scope clarity. Price Forecast page: "Should You Build Now or Wait?" with plain-English indicator explanations.
+
+4. **Frontend-PDF Alignment:** Price Forecast tab renamed "Build Now or Wait?" matching PDF. Table shows "When / Expected Cost / Extra You'd Pay". Amber conclusion box. Same language across app and PDF.
+
+**Why this approach:** The meaningful-ai-report-output spec demands AI that synthesizes, reasons, compares, and detects unknowns — not just narrates metrics. Domain Brain Architecture provides the framework: identity + doctrine + memory + retrieval + tools + reasoning. For hackathon, implemented as structured prompt architecture within existing Netlify Functions. Site-responsive design uses rule-based heuristics (no simulation tools needed) following the site-responsive-house-design spec.
+
+**Files changed:** analyze.js (brain prompt + site design + rule-based fallback), house_estimate.js (structured brain output), App.jsx (structured AI renderer + site design section), HouseConceptPanel.jsx (structured AI output), ReportGenerator.jsx (4-page redesign + forecast explanations), PriceForecastPanel.jsx (Build Now or Wait framing), FloorPlanView.jsx (font scaling + 3D compass)
+
+**Next:** Test with new Netlify account, set ANTHROPIC_API_KEY to compare rule-based vs Claude output, demo prep
