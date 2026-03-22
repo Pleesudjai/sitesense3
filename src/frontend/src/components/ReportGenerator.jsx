@@ -910,34 +910,51 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
   const page4 = buildAppendixHTML(result, codeRef)
 
   // ── Page 5: House Concept (if available) ──
-  const page5 = !houseResult ? '' : `
+  // Show only Standard layout (matching the UI)
+  const stdLayout = houseResult?.layouts?.find(l => l.score === 85) || houseResult?.layouts?.[1] || houseResult?.layouts?.[0]
+  const page5 = !houseResult || !stdLayout ? '' : (() => {
+    const costLow = stdLayout.cost?.range?.low ?? 0
+    const costHigh = stdLayout.cost?.range?.high ?? 0
+    const costPerSF = stdLayout.cost?.costPerSF ?? 0
+    const totalSF = stdLayout.totalSF || 0
+    const rooms = Array.isArray(stdLayout.rooms) ? stdLayout.rooms.map(r => r.name || r).join(', ') : ''
+    const qualLabel = (houseResult.quality || 'mid').charAt(0).toUpperCase() + (houseResult.quality || 'mid').slice(1)
+    const fndLabel = (houseResult.foundationType || 'CONVENTIONAL_SLAB').replace(/_/g, ' ')
+
+    return `
     <div class="page">
       <div class="header"><h1>House Concept Estimate</h1><span>${now}</span></div>
-      <p style="color:#94a3b8;margin-bottom:16px;">Location: ${houseResult.location?.query || address} · Quality: ${(houseResult.quality || 'mid').charAt(0).toUpperCase() + (houseResult.quality || 'mid').slice(1)} · Foundation: ${(houseResult.foundationType || 'CONVENTIONAL_SLAB').replace(/_/g, ' ')}</p>
 
-      <h2>Layout Options</h2>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-        ${(houseResult.layouts || []).map(l => {
-          const isBest = (houseResult.layouts || []).every(o => l.score >= o.score)
-          const costLow = l.cost?.range?.low ?? 0
-          const costHigh = l.cost?.range?.high ?? 0
-          const rooms = Array.isArray(l.rooms) ? l.rooms.map(r => r.name || r).join(', ') : ''
-          return `<div class="card" style="${isBest ? 'border-color:#02C39A;' : ''}">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <strong>${l.name}</strong>
-              ${isBest ? '<span style="background:#02C39A22;color:#02C39A;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;">Recommended</span>' : ''}
-            </div>
-            <p style="font-size:18px;font-weight:700;color:#02C39A;margin:6px 0;">${money(costLow)} – ${money(costHigh)}</p>
-            <p style="font-size:12px;color:#94a3b8;">${fmtInt(l.totalSF || 0)} SF · ${l.structuralSystem || 'Wood frame'}</p>
-            <p style="font-size:11px;color:#64748b;margin-top:4px;">${rooms}</p>
-            <p style="font-size:11px;color:#94a3b8;margin-top:4px;">Score: <strong>${l.score}/100</strong></p>
-          </div>`
-        }).join('')}
+      <div class="card" style="margin-bottom:20px;border-color:#02C39A;">
+        <h2 style="margin:0 0 8px 0;font-size:18px;">Standard Layout — ${fmtInt(totalSF)} SF</h2>
+        <p style="font-size:28px;font-weight:800;color:#02C39A;margin:4px 0;">${money(costLow)} – ${money(costHigh)}</p>
+        <p style="font-size:13px;color:#94a3b8;">Total Construction Cost (building + foundation) · $${costPerSF}/SF</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;">
+          <div>
+            <p style="font-size:11px;color:#64748b;margin-bottom:2px;">Quality Tier</p>
+            <p style="font-size:14px;font-weight:600;color:#e2e8f0;">${qualLabel}</p>
+          </div>
+          <div>
+            <p style="font-size:11px;color:#64748b;margin-bottom:2px;">Structural System</p>
+            <p style="font-size:14px;font-weight:600;color:#e2e8f0;">${stdLayout.structuralSystem || 'Wood frame'}</p>
+          </div>
+          <div>
+            <p style="font-size:11px;color:#64748b;margin-bottom:2px;">Foundation</p>
+            <p style="font-size:14px;font-weight:600;color:#e2e8f0;">${fndLabel}</p>
+          </div>
+          <div>
+            <p style="font-size:11px;color:#64748b;margin-bottom:2px;">Location</p>
+            <p style="font-size:14px;font-weight:600;color:#e2e8f0;">${houseResult.location?.query || address}</p>
+          </div>
+        </div>
       </div>
+
+      <h2>Room Program</h2>
+      <p style="font-size:13px;color:#cbd5e1;margin-bottom:16px;">${rooms}</p>
 
       ${(houseResult.structuralNotes || []).length > 0 ? `
         <h2>Structural Notes</h2>
-        <ul style="font-size:13px;color:#cbd5e1;padding-left:18px;">
+        <ul style="font-size:13px;color:#cbd5e1;padding-left:18px;margin-bottom:16px;">
           ${houseResult.structuralNotes.map(n => `<li style="margin-bottom:4px;">${n}</li>`).join('')}
         </ul>
       ` : ''}
@@ -947,9 +964,14 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
         <div class="card" style="white-space:pre-wrap;font-size:13px;color:#cbd5e1;line-height:1.6;">${houseResult.aiSummary}</div>
       ` : ''}
 
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:10px 14px;margin-top:16px;">
+        <p style="font-size:12px;color:#1e40af;margin:0;">This estimate includes building construction, materials, labor, and foundation. Site preparation costs (earthwork, grading, utilities) are shown on the Cost page.</p>
+      </div>
+
       <div class="disclaimer">This is a preliminary concept estimate only. Actual costs require a licensed contractor bid and site-specific engineering.</div>
     </div>
-  `
+  `})()
+
 
   // ── Page 6: Price Forecast (if available) ──
   const page6 = !forecastResult ? '' : `
