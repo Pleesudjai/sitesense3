@@ -24,6 +24,7 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState(null)
+  const [selectedIdx, setSelectedIdx] = useState(null)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -41,6 +42,9 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
       const res = await estimateHouseConcept(params)
       setResult(res.data)
       onResult?.(res.data)
+      // Auto-select recommended layout
+      const bestIdx = res.data.layouts?.reduce((bi, l, i, arr) => l.score >= arr[bi].score ? i : bi, 0) ?? 0
+      setSelectedIdx(bestIdx)
     } catch (err) {
       setError(err.message || 'House concept generation failed')
     } finally {
@@ -155,6 +159,7 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {result.layouts.map((layout, i) => {
                   const isBest = result.layouts.every(l => layout.score >= l.score)
+                  const isSelected = selectedIdx === i
                   const costLow = layout.cost?.range?.low ?? 0
                   const costHigh = layout.cost?.range?.high ?? 0
                   const roomList = Array.isArray(layout.rooms)
@@ -163,8 +168,9 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
                   return (
                     <div
                       key={i}
-                      className={`bg-gray-800 rounded-lg p-3 space-y-2 border ${
-                        isBest ? 'border-teal-500' : 'border-gray-700'
+                      onClick={() => setSelectedIdx(i)}
+                      className={`bg-gray-800 rounded-lg p-3 space-y-2 border cursor-pointer transition-all hover:border-teal-400 ${
+                        isSelected ? 'border-teal-500 ring-1 ring-teal-500/30' : 'border-gray-700'
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -199,11 +205,10 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
             </>
           )}
 
-          {/* Floor plan for recommended layout */}
-          {result.layouts && (() => {
-            const best = result.layouts.reduce((a, b) => (b.score >= a.score ? b : a), result.layouts[0])
-            return <FloorPlanView layout={best} />
-          })()}
+          {/* Floor plan for selected layout (click a card above to switch) */}
+          {result.layouts && selectedIdx != null && result.layouts[selectedIdx] && (
+            <FloorPlanView layout={result.layouts[selectedIdx]} />
+          )}
 
           {/* Structural notes */}
           {result.structuralNotes?.length > 0 && (
