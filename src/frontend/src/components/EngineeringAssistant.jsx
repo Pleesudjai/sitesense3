@@ -38,7 +38,23 @@ export default function EngineeringAssistant({ siteData, address }) {
     setLoading(true)
     setError(null)
     try {
-      const context = siteData ? { ...siteData, address } : (address ? { address } : null)
+      // Send only a slim summary — full siteData is too large and causes timeout
+      const context = siteData ? {
+        address,
+        soil_texture: siteData.soil?.texture_class,
+        shrink_swell: siteData.soil?.shrink_swell,
+        bearing_psf: siteData.soil?.presumptive_bearing_psf,
+        flood_zone: siteData.flood?.zone,
+        seismic_sdc: siteData.seismic?.sdc || siteData.loads?.seismic_sdc,
+        seismic_sds: siteData.seismic?.sds,
+        avg_slope_pct: siteData.slope?.avg_slope_pct,
+        fire_risk: siteData.fire?.risk_class,
+        foundation_type: siteData.foundation?.type,
+        wind_mph: siteData.loads?.wind_mph,
+        snow_psf: siteData.loads?.snow_psf,
+        area_acres: siteData.elevation?.area_acres,
+        verdict: siteData.ai_report?.verdict,
+      } : (address ? { address } : null)
       const res = await askEngineering(question, context)
       setConversations(prev => [{ q: question, ...res.data }, ...prev])
       setQuestion('')
