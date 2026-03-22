@@ -1141,7 +1141,7 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
 
 // ─── RULE-BASED REPORT (fallback — no Claude API needed) ────────────────────
 
-function generateRuleBasedReport(summary) {
+function generateRuleBasedReport(summary, gisData) {
   // Count high-risk factors
   const risks = []
   if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) risks.push('flood zone ' + summary.flood_zone)
@@ -1231,7 +1231,7 @@ function generateRuleBasedReport(summary) {
   next_steps.push({ action: 'Engage architect for concept development', who: 'Licensed architect', why: 'Translate feasibility findings into a buildable design concept' })
 
   // Site design
-  const site_design = generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsData, soilData)
+  const site_design = generateSiteDesign(summary, gisData?.elevData, gisData?.slopeData, gisData?.floodData, gisData?.wetlandsData, gisData?.soilData)
 
   return {
     verdict,
@@ -1247,13 +1247,13 @@ function generateRuleBasedReport(summary) {
 
 // ─── CLAUDE AI BRAIN REPORT ─────────────────────────────────────────────────
 
-async function generateAiBrainReport(summary) {
+async function generateAiBrainReport(summary, gisData) {
   const apiKey = process.env.ANTHROPIC_API_KEY
 
   // Try Claude first, fall back to rule-based
   if (!apiKey) {
     console.log('No ANTHROPIC_API_KEY — using rule-based report')
-    return generateRuleBasedReport(summary)
+    return generateRuleBasedReport(summary, gisData)
   }
 
   const client = new Anthropic({ apiKey })
@@ -1305,11 +1305,11 @@ Respond with ONLY valid JSON matching this exact structure:
     } catch {
       // Claude returned non-JSON — wrap it
       console.warn('Claude returned non-JSON, falling back to rule-based')
-      return generateRuleBasedReport(summary)
+      return generateRuleBasedReport(summary, gisData)
     }
   } catch (e) {
     console.error('Claude API failed, falling back to rule-based:', e.message)
-    return generateRuleBasedReport(summary)
+    return generateRuleBasedReport(summary, gisData)
   }
 }
 
@@ -1825,7 +1825,7 @@ exports.handler = async (event) => {
       summary.slope_direction = 'south'
     }
 
-    const aiReport = await generateAiBrainReport(summary)
+    const aiReport = await generateAiBrainReport(summary, { elevData, slopeData, floodData, wetlandsData, soilData })
 
     return {
       statusCode: 200,
