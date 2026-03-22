@@ -1356,6 +1356,319 @@ function assembleEvidencePack(address, polygon, elevData, slopeData, cutFill, fl
   }
 }
 
+// ─── EXPERT LAYER ───────────────────────────────────────────────────────────
+
+function expertResult(name, verdict, reasons, risks, opportunities, confidence, unknowns, nextChecks, evidenceRefs) {
+  return { expert: name, verdict, reasons, risks, opportunities, confidence, unknowns, next_checks: nextChecks, evidence_refs: evidenceRefs }
+}
+
+function runFoundationAdvisor(ep) {
+  // ep = evidence_pack
+  const soil = ep.retrieval?.soil || {}
+  const slope = ep.computed?.slope || {}
+  const flood = ep.retrieval?.flood || {}
+  const fnd = ep.computed?.foundation || {}
+
+  const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
+  let verdict = 'low_risk'
+
+  if (soil.shrink_swell === 'High' || soil.expansive_risk === 'High') {
+    verdict = 'moderate_risk'
+    reasons.push('Expansive soil indicators present — post-tensioned slab likely required (ACI 360R-10 §5.4)')
+    risks.push('Foundation cost 40-80% higher than conventional slab')
+    refs.push('retrieval.soil.shrink_swell')
+  }
+  if (soil.caliche) {
+    verdict = verdict === 'low_risk' ? 'moderate_risk' : verdict
+    reasons.push('Caliche hardpan detected — grade beams on piers recommended (ACI 360R-10 §4.2)')
+    risks.push('Excavation costs $3-8/SF above standard')
+    refs.push('retrieval.soil.caliche')
+  }
+  if (soil.collapsible) {
+    verdict = 'high_risk'
+    reasons.push('Collapsible soil — pre-wetting or compaction grouting may be needed')
+    risks.push('Unpredictable settlement risk without ground improvement')
+  }
+  if (soil.organic) {
+    verdict = 'high_risk'
+    reasons.push('Organic soil — deep foundations required, no spread footings (IBC §1803.5.5)')
+    risks.push('Deep pile foundation significantly increases cost')
+  }
+  if (soil.liquefiable) {
+    verdict = 'high_risk'
+    reasons.push('Liquefaction risk — ground improvement + deep foundations needed')
+  }
+  if (['AE','VE','A','AO'].includes(flood.zone)) {
+    verdict = 'high_risk'
+    reasons.push(`Flood zone ${flood.zone} — elevated/pile foundation required (ASCE 7-22 Ch.5)`)
+    risks.push('Elevated construction adds $35-80/SF to foundation')
+    refs.push('retrieval.flood.zone')
+  }
+  if (slope.avg_pct > 15) {
+    verdict = verdict === 'low_risk' ? 'moderate_risk' : verdict
+    reasons.push(`Average slope ${slope.avg_pct}% — retaining walls and specialized grading likely`)
+    risks.push('Steep terrain increases foundation and grading complexity')
+    refs.push('computed.slope.avg_pct')
+  }
+  if (soil.bearing_psf && soil.bearing_psf < 1500) {
+    reasons.push(`Low presumptive bearing (${soil.bearing_psf} psf) — geotechnical investigation critical`)
+  }
+
+  if (reasons.length === 0) {
+    reasons.push('Standard soil and terrain conditions — conventional foundation feasible')
+    opps.push('Conventional slab-on-ground is the most cost-effective option')
+  }
+  opps.push(slope.avg_pct > 10 ? 'A compact footprint reduces earthwork and retaining costs' : 'Flat terrain allows flexible pad placement')
+
+  unknowns.push('No geotechnical borings — soil data is screening-level only')
+  checks.push('Obtain geotechnical investigation before foundation design')
+
+  const conf = soil.confidence === 'fallback' ? 'low' : soil.confidence === 'verified' ? 'high' : 'estimated'
+
+  return expertResult('foundation-advisor', verdict, reasons, risks, opps, conf, unknowns, checks, refs)
+}
+
+function runStormwaterReviewer(ep) {
+  const flood = ep.retrieval?.flood || {}
+  const soil = ep.retrieval?.soil || {}
+  const precip = ep.retrieval?.precipitation || {}
+  const runoff = ep.computed?.runoff || {}
+  const slope = ep.computed?.slope || {}
+
+  const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
+  let verdict = 'low_risk'
+
+  if (['AE','VE','A','AO'].includes(flood.zone)) {
+    verdict = 'high_risk'
+    reasons.push(`FEMA flood zone ${flood.zone} — drainage and flood mitigation critical`)
+    risks.push('Flood insurance required, elevated construction likely')
+    refs.push('retrieval.flood.zone')
+  }
+  if (soil.hydrologic_group === 'D') {
+    verdict = verdict === 'low_risk' ? 'moderate_risk' : verdict
+    reasons.push('Hydrologic Soil Group D — very slow infiltration, detention basin likely required')
+    risks.push('On-site detention adds cost and reduces buildable area')
+    refs.push('retrieval.soil.hydrologic_group')
+  }
+  if (runoff.detention_needed) {
+    verdict = verdict === 'low_risk' ? 'moderate_risk' : verdict
+    reasons.push(`Peak runoff ${runoff.peak_cfs} CFS exceeds threshold — detention needed`)
+    refs.push('computed.runoff')
+  }
+  if (slope.avg_pct > 10) {
+    reasons.push('Steep terrain increases erosion risk during and after construction')
+    risks.push('Erosion control measures required')
+  }
+
+  if (reasons.length === 0) {
+    reasons.push('No major drainage concerns identified — standard stormwater management')
+    opps.push('Simple drainage design likely sufficient')
+  }
+
+  unknowns.push('Local drainage requirements not verified with jurisdiction')
+  checks.push('Verify stormwater requirements with local civil review')
+
+  return expertResult('stormwater-reviewer', verdict, reasons, risks, opps, soil.confidence || 'estimated', unknowns, checks, refs)
+}
+
+function runSiteDesignAdvisor(ep) {
+  const buildable = ep.computed?.buildable_area || {}
+  const slope = ep.computed?.slope || {}
+  const parcel = ep.parcel || {}
+
+  const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
+  let verdict = 'low_risk'
+
+  const buildPct = buildable.pct_of_parcel || 100
+  if (buildPct < 40) {
+    verdict = 'high_risk'
+    reasons.push(`Only ${buildPct}% of parcel is buildable — severely constrained`)
+    risks.push('Limited design flexibility, may not fit desired program')
+    refs.push('computed.buildable_area.pct_of_parcel')
+  } else if (buildPct < 70) {
+    verdict = 'moderate_risk'
+    reasons.push(`${buildPct}% of parcel buildable — constraints reduce usable area`)
+    refs.push('computed.buildable_area.pct_of_parcel')
+  } else {
+    reasons.push(`${buildPct}% buildable — good design flexibility`)
+    opps.push('Ample buildable area for various concept types')
+  }
+
+  if (slope.steep_fraction_pct > 20) {
+    reasons.push(`${slope.steep_fraction_pct}% of parcel exceeds 30% slope — significant grading constraints`)
+    risks.push('Steep areas require retaining walls or must be avoided')
+  }
+
+  const constraints = buildable.constraints_applied || []
+  if (constraints.length > 0) {
+    reasons.push(`Active constraints: ${constraints.join(', ')}`)
+  }
+
+  opps.push('Site analysis has identified candidate pad locations with scores')
+  unknowns.push('Setbacks estimated — actual zoning setbacks not yet verified')
+  checks.push('Verify setbacks and zoning with local jurisdiction')
+
+  return expertResult('site-design-advisor', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+}
+
+function runCostForecaster(ep) {
+  const costs = ep.computed?.costs || {}
+  const fnd = ep.computed?.foundation || {}
+
+  const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
+  let verdict = 'low_risk'
+
+  const total = costs.total_now || 0
+  const mult = costs.regional_multiplier || 1.0
+  const proj5 = costs.projections?.[5] || total * 1.25
+  const increase5 = total > 0 ? Math.round((proj5 / total - 1) * 100) : 25
+
+  reasons.push(`Estimated site prep cost: $${total.toLocaleString()} (${mult.toFixed(2)}x regional factor)`)
+  reasons.push(`5-year projection: $${proj5.toLocaleString()} (+${increase5}% at 4.5% ENR CCI)`)
+  refs.push('computed.costs')
+
+  if (increase5 > 30) {
+    verdict = 'moderate_risk'
+    risks.push('Construction cost inflation is outpacing general inflation — waiting increases project cost significantly')
+  }
+  if (fnd.type && fnd.type !== 'CONVENTIONAL_SLAB') {
+    risks.push(`Non-standard foundation (${fnd.type.replace(/_/g, ' ')}) adds cost premium`)
+    refs.push('computed.foundation.type')
+  }
+
+  opps.push('Building sooner locks in today\'s pricing')
+  if (mult < 0.95) opps.push(`Regional cost advantage — ${Math.round((1-mult)*100)}% below national average`)
+
+  unknowns.push('Contractor bid pricing not included — ROM estimate only')
+  checks.push('Obtain competitive bids from at least 3 contractors')
+
+  return expertResult('cost-forecaster', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+}
+
+function routeExperts(ep) {
+  const experts = []
+  const routing_reason = []
+
+  // Always run these
+  experts.push('foundation-advisor')
+  routing_reason.push('Foundation review is always required')
+
+  // Conditional experts
+  const flood = ep.retrieval?.flood || {}
+  const runoff = ep.computed?.runoff || {}
+  if (['AE','VE','A','AO'].includes(flood.zone) || runoff.detention_needed || (ep.retrieval?.soil?.hydrologic_group === 'D')) {
+    experts.push('stormwater-reviewer')
+    routing_reason.push('Flood/drainage indicators require stormwater review')
+  }
+
+  const buildable = ep.computed?.buildable_area || {}
+  if ((buildable.pct_of_parcel || 100) < 80 || (ep.computed?.slope?.steep_fraction_pct || 0) > 10) {
+    experts.push('site-design-advisor')
+    routing_reason.push('Buildable area constraints or slope require site design review')
+  }
+
+  experts.push('cost-forecaster')
+  routing_reason.push('Cost assessment is always required')
+
+  // Always last
+  experts.push('parcel-strategist')
+  experts.push('data-quality-auditor')
+
+  return { selected_experts: experts, routing_reason }
+}
+
+function runParcelStrategist(ep, expertFindings) {
+  // Merge all expert verdicts into one parcel-level verdict
+  const verdicts = expertFindings.map(e => e.verdict)
+  const hasHigh = verdicts.includes('high_risk')
+  const hasMod = verdicts.includes('moderate_risk')
+
+  const verdict = hasHigh ? 'High Risk' : hasMod ? 'Proceed with Caution' : 'Good Candidate'
+
+  // Collect top risks across all experts
+  const allRisks = expertFindings.flatMap(e => e.risks || [])
+  const allReasons = expertFindings.flatMap(e => e.reasons || [])
+  const allOpps = expertFindings.flatMap(e => e.opportunities || [])
+  const allUnknowns = [...new Set(expertFindings.flatMap(e => e.unknowns || []))]
+  const allChecks = [...new Set(expertFindings.flatMap(e => e.next_checks || []))]
+
+  // Top tradeoffs — find competing signals
+  const tradeoffs = []
+  const fndExpert = expertFindings.find(e => e.expert === 'foundation-advisor')
+  const siteExpert = expertFindings.find(e => e.expert === 'site-design-advisor')
+  const costExpert = expertFindings.find(e => e.expert === 'cost-forecaster')
+
+  if (fndExpert?.verdict !== 'low_risk' && siteExpert?.verdict === 'low_risk') {
+    tradeoffs.push('Good buildable area but soil/foundation conditions increase costs')
+  }
+  if (siteExpert?.verdict !== 'low_risk' && fndExpert?.verdict === 'low_risk') {
+    tradeoffs.push('Favorable soil conditions but limited buildable area constrains design options')
+  }
+  if (costExpert && (ep.computed?.costs?.regional_multiplier || 1) < 0.95) {
+    tradeoffs.push('Regional cost advantage partially offset by site-specific challenges')
+  }
+  if (tradeoffs.length === 0) {
+    tradeoffs.push(hasHigh ? 'Multiple significant constraints affect feasibility and cost' : 'No major competing factors — site conditions are relatively consistent')
+  }
+
+  // Verdict reason
+  const topIssues = allRisks.slice(0, 2).join('. ')
+  const verdictReason = hasHigh
+    ? `Significant site challenges identified: ${topIssues}`
+    : hasMod
+      ? `Site is buildable but some conditions may increase costs: ${topIssues}`
+      : 'No major risk factors detected — site appears suitable for standard construction'
+
+  return {
+    verdict, verdict_reason: verdictReason,
+    top_reasons: allReasons.slice(0, 3),
+    top_risks: allRisks.slice(0, 3),
+    top_opportunities: allOpps.slice(0, 3),
+    tradeoffs,
+    unknowns: allUnknowns,
+    next_steps: allChecks.map((action, i) => {
+      const expertSource = expertFindings.find(e => e.next_checks?.includes(action))
+      return { action, who: expertSource?.expert?.replace(/-/g, ' ') || 'Professional', why: `Recommended by ${expertSource?.expert || 'analysis'}` }
+    }),
+  }
+}
+
+function runDataQualityAuditor(ep, strategistResult) {
+  const confidence = ep.confidence || {}
+  const warnings = []
+
+  // Check each data layer's confidence
+  Object.entries(confidence).forEach(([key, level]) => {
+    if (level === 'fallback') warnings.push(`${key}: using default values — actual data unavailable`)
+    if (level === 'heuristic') warnings.push(`${key}: estimated from rules, not direct measurement`)
+  })
+
+  // Downgrade verdict if critical data is weak
+  let auditedVerdict = strategistResult.verdict
+  const criticalFallbacks = ['soil', 'flood', 'seismic'].filter(k => confidence[k] === 'fallback')
+  if (criticalFallbacks.length > 0 && auditedVerdict === 'Good Candidate') {
+    auditedVerdict = 'Proceed with Caution'
+    warnings.push(`Verdict softened: ${criticalFallbacks.join(', ')} data is from defaults, not verified sources`)
+  }
+
+  const overallConf = criticalFallbacks.length > 0 ? 'low'
+    : Object.values(confidence).filter(v => v === 'partially_verified' || v === 'heuristic').length > 3 ? 'estimated'
+    : 'moderate'
+
+  return {
+    ...strategistResult,
+    verdict: auditedVerdict,
+    confidence_summary: {
+      overall: overallConf === 'low' ? 'needs_verification' : confidence.overall || 'partially_verified',
+      reason: criticalFallbacks.length > 0
+        ? `Critical data (${criticalFallbacks.join(', ')}) is from defaults. Professional verification needed before design decisions.`
+        : 'Core data from government sources. Subsurface and utility confirmation still pending.',
+      data_quality_warnings: warnings,
+    },
+    assumptions: ep.assumptions || [],
+  }
+}
+
 // ─── RULE-BASED REPORT (fallback — no Claude API needed) ────────────────────
 
 function generateRuleBasedReport(summary, gisData, evidencePack) {
@@ -2058,7 +2371,34 @@ exports.handler = async (event) => {
       foundationType, foundationCode, sdc, loads, runoff, costs, buildableSf
     )
 
+    // Run expert router
+    const routing = routeExperts(evidencePack)
+
+    // Run selected experts
+    const expertFindings = []
+    if (routing.selected_experts.includes('foundation-advisor')) expertFindings.push(runFoundationAdvisor(evidencePack))
+    if (routing.selected_experts.includes('stormwater-reviewer')) expertFindings.push(runStormwaterReviewer(evidencePack))
+    if (routing.selected_experts.includes('site-design-advisor')) expertFindings.push(runSiteDesignAdvisor(evidencePack))
+    if (routing.selected_experts.includes('cost-forecaster')) expertFindings.push(runCostForecaster(evidencePack))
+
+    // Strategist synthesizes
+    const strategistResult = runParcelStrategist(evidencePack, expertFindings)
+
+    // Auditor validates
+    const auditedReport = runDataQualityAuditor(evidencePack, strategistResult)
+
     const aiReport = await generateAiBrainReport(summary, { elevData, slopeData, floodData, wetlandsData, soilData }, evidencePack)
+
+    // Merge expert findings into the report
+    aiReport.expert_findings = expertFindings
+    aiReport.routing = routing
+    aiReport.verdict = auditedReport.verdict  // auditor may have softened it
+    aiReport.verdict_reason = auditedReport.verdict_reason
+    aiReport.top_reasons = auditedReport.top_reasons
+    aiReport.top_risks = auditedReport.top_risks
+    aiReport.top_opportunities = auditedReport.top_opportunities
+    if (auditedReport.tradeoffs?.length > 0) aiReport.tradeoffs = auditedReport.tradeoffs
+    aiReport.confidence_summary = auditedReport.confidence_summary
 
     return {
       statusCode: 200,
@@ -2077,6 +2417,8 @@ exports.handler = async (event) => {
           buildable_sf: Math.round(buildableSf),
           costs, summary,
           evidence_pack: evidencePack,
+          expert_findings: expertFindings,
+          routing: routing,
           report_text: typeof aiReport === 'string' ? aiReport : JSON.stringify(aiReport),
           ai_report: aiReport,
         },

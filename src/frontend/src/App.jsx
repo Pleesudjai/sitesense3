@@ -251,6 +251,33 @@ export default function App() {
                         )}
                       </div>
 
+                      {/* Expert Findings */}
+                      {result.expert_findings?.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-purple-400 mb-1">Expert Panel ({result.expert_findings.length} specialists consulted)</h3>
+                          <div className="space-y-1.5">
+                            {result.expert_findings.map((ef, i) => {
+                              const verdictColor = ef.verdict === 'high_risk' ? 'text-red-400' : ef.verdict === 'moderate_risk' ? 'text-amber-400' : 'text-green-400'
+                              const expertName = ef.expert?.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Expert'
+                              return (
+                                <div key={i} className="bg-gray-800/50 rounded px-2 py-1.5 text-xs">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-300 font-medium">{expertName}</span>
+                                    <span className={`font-semibold ${verdictColor}`}>{ef.verdict?.replace(/_/g, ' ')}</span>
+                                  </div>
+                                  {ef.reasons?.length > 0 && (
+                                    <p className="text-gray-500 mt-0.5 text-[10px]">{ef.reasons[0]}</p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                          {result.routing?.routing_reason?.length > 0 && (
+                            <p className="text-[9px] text-gray-600 mt-1">Routing: {result.routing.routing_reason.join(' · ')}</p>
+                          )}
+                        </div>
+                      )}
+
                       {/* Tradeoffs */}
                       {result.ai_report.tradeoffs?.length > 0 && (
                         <div>
@@ -258,6 +285,18 @@ export default function App() {
                           <ul className="text-xs text-gray-400 space-y-1">
                             {result.ai_report.tradeoffs.map((t, i) => (
                               <li key={i} className="bg-amber-950/20 rounded px-2 py-1 border-l-2 border-amber-700">{t}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Opportunities */}
+                      {result.ai_report?.top_opportunities?.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-green-400 mb-1">Opportunities</h3>
+                          <ul className="text-xs text-gray-400 space-y-1">
+                            {result.ai_report.top_opportunities.map((o, i) => (
+                              <li key={i} className="bg-green-950/20 rounded px-2 py-1 border-l-2 border-green-700">{o}</li>
                             ))}
                           </ul>
                         </div>
@@ -471,6 +510,16 @@ export default function App() {
                         }`}>
                           <span className="font-semibold">Overall confidence: {result.ai_report.confidence_summary.overall?.replace('_',' ')}</span>
                           <p className="text-[10px] opacity-70 mt-0.5">{result.ai_report.confidence_summary.reason}</p>
+                        </div>
+                      )}
+
+                      {/* Data Quality Warnings */}
+                      {result.ai_report?.confidence_summary?.data_quality_warnings?.length > 0 && (
+                        <div className="bg-gray-700/20 rounded p-2 mt-1">
+                          <h3 className="text-[10px] font-semibold text-gray-500 mb-1">Data Quality Warnings</h3>
+                          <ul className="text-[9px] text-gray-500 list-disc list-inside space-y-0.5">
+                            {result.ai_report.confidence_summary.data_quality_warnings.map((w, i) => <li key={i}>{w}</li>)}
+                          </ul>
                         </div>
                       )}
                     </>
