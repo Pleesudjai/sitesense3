@@ -974,63 +974,109 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
 
 
   // ── Page 6: Price Forecast (if available) ──
+  // Plain-English indicator explanations for the PDF
+  function explainIndicator(key, ind) {
+    const rate = ind.rate, val = ind.value
+    if (key === 'constructionInflation') {
+      return rate > 0.04
+        ? `Building materials and labor are rising ${(rate*100).toFixed(1)}% per year — faster than general inflation. Lumber, concrete, and steel prices are the main drivers. Waiting to build will likely cost more.`
+        : `Construction costs are rising at ${(rate*100).toFixed(1)}% per year — roughly in line with historical averages.`
+    }
+    if (key === 'localCostFactor') {
+      return val > 1.05
+        ? `Building in your area costs about ${Math.round((val-1)*100)}% more than the national average due to local labor demand and cost of living.`
+        : val < 0.95
+          ? `Building in your area costs about ${Math.round((1-val)*100)}% less than the national average — a relative cost advantage.`
+          : `Building costs in your area are close to the national average.`
+    }
+    if (key === 'housingMarketTrend') {
+      return rate > 0.05
+        ? `Home values in your state are appreciating ${(rate*100).toFixed(1)}% per year — a strong market. Building now locks in today's construction cost while property values rise.`
+        : rate > 0.03
+          ? `Home values are growing ${(rate*100).toFixed(1)}% per year — moderate, healthy appreciation.`
+          : `Home values are growing slowly at ${(rate*100).toFixed(1)}% per year.`
+    }
+    if (key === 'macroInflation') {
+      return `The Federal Reserve's preferred inflation measure is at ${(rate*100).toFixed(1)}%. This sets the baseline for how fast all prices — including construction — are rising across the economy.`
+    }
+    if (key === 'supplyConditions') {
+      const mr = ind.mortgage_rate || 6.85, temp = ind.market_temp || 'balanced'
+      return mr > 7
+        ? `Mortgage rates are high (${mr}%) which is cooling demand. The market is ${temp}. Higher rates also affect construction loan costs.`
+        : `Mortgage rates are at ${mr}% — ${mr > 6 ? 'elevated but stabilizing' : 'relatively favorable'}. The market is ${temp}.`
+    }
+    return ''
+  }
+  const INDICATOR_TITLES = {
+    constructionInflation: 'Construction Material & Labor Costs',
+    localCostFactor: 'Your Local Cost Level',
+    housingMarketTrend: 'Local Housing Market Trend',
+    macroInflation: 'Overall Economy (Inflation)',
+    supplyConditions: 'Housing Supply & Mortgage Rates',
+  }
+
+  const fc = forecastResult
+  const yr5 = fc?.forecasts?.find(f => f.year === 5)
+  const waitDiff = yr5 ? yr5.expected - (fc.currentEstimate?.expected || 0) : 0
+
   const page6 = !forecastResult ? '' : `
     <div class="page">
-      <div class="header"><h1>Construction Cost Forecast</h1><span>${now}</span></div>
-      <p style="color:#94a3b8;margin-bottom:16px;">Location: ${forecastResult.location?.query || address} · ${forecastResult.location?.state || 'US'}</p>
+      <div class="header"><h1>Should You Build Now or Wait?</h1><span>${now}</span></div>
+      <p style="color:#64748b;margin-bottom:16px;">This forecast uses official government economic data to help you understand how construction costs may change over time.</p>
 
-      <div class="card" style="text-align:center;margin-bottom:20px;">
-        <p style="color:#94a3b8;font-size:12px;">Current Construction Cost Estimate</p>
-        <p style="font-size:32px;font-weight:800;color:#02C39A;margin:8px 0;">${money(forecastResult.currentEstimate?.expected)}</p>
-        <p style="color:#94a3b8;font-size:14px;">${money(forecastResult.currentEstimate?.low)} — ${money(forecastResult.currentEstimate?.high)}</p>
-        <p style="color:#64748b;font-size:12px;margin-top:4px;">$${forecastResult.currentEstimate?.perSF || '—'}/SF</p>
+      <div class="card" style="text-align:center;margin-bottom:20px;border-color:#02C39A;">
+        <p style="color:#94a3b8;font-size:13px;">If you build today, your estimated construction cost is</p>
+        <p style="font-size:36px;font-weight:800;color:#02C39A;margin:8px 0;">${money(fc.currentEstimate?.expected)}</p>
+        <p style="color:#94a3b8;font-size:14px;">Range: ${money(fc.currentEstimate?.low)} — ${money(fc.currentEstimate?.high)} · $${fc.currentEstimate?.perSF || '—'}/SF</p>
       </div>
 
-      <h2>Cost Forecast Timeline</h2>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:20px;">
-        <thead><tr style="border-bottom:2px solid #374151;color:#94a3b8;">
-          <th style="text-align:left;padding:8px 4px;">Horizon</th>
-          <th style="text-align:right;padding:8px 4px;">Low</th>
-          <th style="text-align:right;padding:8px 4px;">Expected</th>
-          <th style="text-align:right;padding:8px 4px;">High</th>
-          <th style="text-align:right;padding:8px 4px;">Change</th>
+      <h2>What Happens If You Wait</h2>
+      <p style="font-size:13px;color:#334155;margin-bottom:12px;">Construction costs don't stay the same. Materials, labor, and market conditions change every year. Here's what your project could cost if you delay:</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;">
+        <thead><tr style="border-bottom:2px solid #e2e8f0;color:#64748b;">
+          <th style="text-align:left;padding:10px 8px;">When</th>
+          <th style="text-align:right;padding:10px 8px;">Expected Cost</th>
+          <th style="text-align:right;padding:10px 8px;">Extra You'd Pay</th>
         </tr></thead>
         <tbody>
-          <tr style="border-bottom:1px solid #1f2937;">
-            <td style="padding:6px 4px;font-weight:600;">Now</td>
-            <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(forecastResult.currentEstimate?.low)}</td>
-            <td style="text-align:right;padding:6px 4px;color:#02C39A;font-weight:600;">${money(forecastResult.currentEstimate?.expected)}</td>
-            <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(forecastResult.currentEstimate?.high)}</td>
-            <td style="text-align:right;padding:6px 4px;color:#64748b;">—</td>
+          <tr style="border-bottom:1px solid #f1f5f9;background:#f0fdf4;">
+            <td style="padding:10px 8px;font-weight:700;color:#166534;">Build Now</td>
+            <td style="text-align:right;padding:10px 8px;font-weight:700;color:#166534;">${money(fc.currentEstimate?.expected)}</td>
+            <td style="text-align:right;padding:10px 8px;color:#166534;">—</td>
           </tr>
-          ${(forecastResult.forecasts || []).map(f => {
-            const pctChange = ((f.expected / forecastResult.currentEstimate.expected - 1) * 100).toFixed(1)
-            return `<tr style="border-bottom:1px solid #1f2937;">
-              <td style="padding:6px 4px;font-weight:600;">Year ${f.year}</td>
-              <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(f.low)}</td>
-              <td style="text-align:right;padding:6px 4px;color:#02C39A;font-weight:600;">${money(f.expected)}</td>
-              <td style="text-align:right;padding:6px 4px;color:#94a3b8;">${money(f.high)}</td>
-              <td style="text-align:right;padding:6px 4px;color:#f59e0b;">+${pctChange}%</td>
+          ${(fc.forecasts || []).map(f => {
+            const extra = f.expected - (fc.currentEstimate?.expected || 0)
+            return `<tr style="border-bottom:1px solid #f1f5f9;">
+              <td style="padding:10px 8px;font-weight:600;">Wait ${f.year} year${f.year > 1 ? 's' : ''}</td>
+              <td style="text-align:right;padding:10px 8px;">${money(f.expected)}</td>
+              <td style="text-align:right;padding:10px 8px;color:#dc2626;font-weight:600;">+${money(extra)}</td>
             </tr>`
           }).join('')}
         </tbody>
       </table>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:12px 16px;margin-bottom:20px;">
+        <p style="font-size:13px;color:#92400e;margin:0;font-weight:600;">${waitDiff > 0
+          ? `Waiting 5 years could add approximately ${money(waitDiff)} to your construction cost. Building sooner is likely more cost-effective.`
+          : `Market conditions are relatively stable. You have some flexibility in timing.`
+        }</p>
+      </div>
 
-      ${forecastResult.indicators ? `
-        <h2>What's Driving This Forecast</h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
-          ${Object.entries(forecastResult.indicators).map(([k, ind]) => `
-            <div class="card" style="padding:10px;">
-              <span style="display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;background:#1e3a5f;color:#7dd3fc;">${ind.contribution}</span>
-              <p style="font-size:14px;font-weight:600;margin:4px 0;">
-                ${ind.rate != null ? (ind.rate * 100).toFixed(1) + '%' : ''}
-                ${ind.value != null ? ind.value.toFixed(2) + 'x' : ''}
-                ${ind.mortgage_rate != null ? ind.mortgage_rate + '% rate · ' + ind.market_temp : ''}
-              </p>
-              <p style="font-size:11px;color:#64748b;">${ind.source}</p>
-            </div>
-          `).join('')}
+      <h2>Why Costs Change — Plain-English Breakdown</h2>
+      <p style="font-size:12px;color:#64748b;margin-bottom:12px;">These are the economic factors affecting your project cost. Each comes from official U.S. government data.</p>
+      ${forecastResult.indicators ? Object.entries(forecastResult.indicators).map(([k, ind]) => `
+        <div class="card" style="padding:12px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:14px;color:#1e293b;">${INDICATOR_TITLES[k] || k}</strong>
+            <span style="font-size:14px;font-weight:700;color:#02C39A;">
+              ${ind.rate != null ? (ind.rate * 100).toFixed(1) + '%' : ''}
+              ${ind.value != null ? ind.value.toFixed(2) + 'x' : ''}
+              ${ind.mortgage_rate != null ? ind.mortgage_rate + '%' : ''}
+            </span>
+          </div>
+          <p style="font-size:12px;color:#475569;line-height:1.5;margin:0 0 4px 0;">${explainIndicator(k, ind)}</p>
+          <p style="font-size:10px;color:#94a3b8;margin:0;">Source: ${ind.source}</p>
         </div>
+      `).join('') : ''}
       ` : ''}
 
       ${forecastResult.sources ? `
