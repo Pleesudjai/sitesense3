@@ -284,25 +284,28 @@ function FloorPlan2D({ layout }) {
                 </g>
               )}
 
-              {/* Room labels */}
+              {/* Room labels — font scales with room size relative to footprint */}
               {rects.filter(r => r.name !== 'Corridor').map((r, i) => {
                 const zc = ZONE_COLORS[r.zone] || ZONE_COLORS.service
-                const cx = ox + r.x + r.w / 2
-                const cy = oy + r.y + r.h / 2
-                const fontSize = Math.max(1.8, Math.min(r.w / 5.5, r.h / 4, 3.8))
+                const rcx = ox + r.x + r.w / 2
+                const rcy = oy + r.y + r.h / 2
+                const minDim = Math.min(r.w, r.h)
+                const fontSize = Math.max(1.2, Math.min(minDim / 5, fw / 18, 2.5))
                 const dimW = Math.round(r.w * 10) / 10
                 const dimH = Math.round(r.h * 10) / 10
-                const shortName = r.name.replace('Primary ', 'Prim. ').replace('Hallway / Circulation', 'Hall')
+                const shortName = r.name.replace('Primary ', 'P.').replace('Hallway / Circulation', 'Hall')
                 return (
                   <g key={`label-${i}`}>
-                    <text x={cx} y={cy - fontSize * 0.6} textAnchor="middle" dominantBaseline="middle"
-                      fill={zc.text} fontSize={fontSize} fontWeight="700">{shortName}</text>
-                    <text x={cx} y={cy + fontSize * 0.6} textAnchor="middle" dominantBaseline="middle"
-                      fill={zc.text} fontSize={fontSize * 0.72} opacity={0.7}>
-                      {Math.round(r.area)} SF</text>
-                    <text x={cx} y={oy + r.y + r.h - fontSize * 0.35} textAnchor="middle"
-                      dominantBaseline="middle" fill={zc.text} fontSize={fontSize * 0.55} opacity={0.4}>
-                      {dimW.toFixed(0)}&times;{dimH.toFixed(0)} ft</text>
+                    <text x={rcx} y={rcy - fontSize * 0.7} textAnchor="middle" dominantBaseline="middle"
+                      fill={zc.text} fontSize={fontSize} fontWeight="600">{shortName}</text>
+                    <text x={rcx} y={rcy + fontSize * 0.4} textAnchor="middle" dominantBaseline="middle"
+                      fill={zc.text} fontSize={fontSize * 0.65} opacity={0.6}>
+                      {Math.round(r.area)} sf</text>
+                    {minDim > 4 && (
+                      <text x={rcx} y={oy + r.y + r.h - fontSize * 0.4} textAnchor="middle"
+                        dominantBaseline="middle" fill={zc.text} fontSize={fontSize * 0.5} opacity={0.35}>
+                        {dimW.toFixed(0)}&apos;×{dimH.toFixed(0)}&apos;</text>
+                    )}
                   </g>
                 )
               })}
@@ -312,7 +315,7 @@ function FloorPlan2D({ layout }) {
                 <text x={ox + corridorRect.x + corridorRect.w / 2}
                   y={oy + corridorRect.y + corridorRect.h / 2}
                   textAnchor="middle" dominantBaseline="middle"
-                  fill={ZONE_COLORS.corridor.text} fontSize={2} fontWeight="500" letterSpacing="2">
+                  fill={ZONE_COLORS.corridor.text} fontSize={Math.min(1.5, fw / 25)} fontWeight="500" letterSpacing="1">
                   CORRIDOR</text>
               )}
 
@@ -344,6 +347,7 @@ function FloorPlan2D({ layout }) {
 function FloorPlan3D({ layout }) {
   const canvasRef = useRef(null)
   const [rotation, setRotation] = useState({ x: 30, y: -35 })
+  const [zoom3d, setZoom3d] = useState(1.0)
   const dragRef = useRef({ active: false, lastX: 0, lastY: 0 })
 
   const rooms = layout?.rooms || []
@@ -372,7 +376,7 @@ function FloorPlan3D({ layout }) {
     ctx.clearRect(0, 0, W, H)
 
     const cx = W / 2, cy = H / 2
-    const scale = Math.min(W, H) * 0.25 / Math.max(footW, footH, 1)
+    const scale = Math.min(W, H) * 0.25 * zoom3d / Math.max(footW, footH, 1)
     const floorHt = 12
 
     const radX = rotation.x * Math.PI / 180
@@ -426,20 +430,72 @@ function FloorPlan3D({ layout }) {
       if (q.type === 'top' && q.name && q.name !== 'Corridor') {
         const midX = q.pts.reduce((s, p) => s + p.x, 0) / 4
         const midY = q.pts.reduce((s, p) => s + p.y, 0) / 4
+        // Scale font with zoom and room size
+        const labelSize = Math.max(7, Math.min(11, 9 * zoom3d))
         ctx.fillStyle = '#fff'
-        ctx.font = '9px sans-serif'
+        ctx.font = `${labelSize}px sans-serif`
         ctx.textAlign = 'center'
         ctx.fillText(q.name.replace('Primary ', 'P.').replace('Hallway / Circulation', 'Hall'), midX, midY)
       }
     }
 
+    // Compass (top-right)
+    const compX = W - 30, compY = 30
+    const compLen = 18
+    // N direction rotates with the model
+    const nAngle = (-rotation.y) * Math.PI / 180
+    ctx.save()
+    ctx.translate(compX, compY)
+    // Circle background
+    ctx.beginPath()
+    ctx.arc(0, 0, compLen + 4, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(15,23,42,0.7)'
+    ctx.fill()
+    ctx.strokeStyle = '#475569'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    // N arrow
+    ctx.beginPath()
+    ctx.moveTo(Math.sin(nAngle) * compLen, -Math.cos(nAngle) * compLen)
+    ctx.lineTo(0, 0)
+    ctx.strokeStyle = '#ef4444'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    // S arrow
+    ctx.beginPath()
+    ctx.moveTo(-Math.sin(nAngle) * compLen * 0.6, Math.cos(nAngle) * compLen * 0.6)
+    ctx.lineTo(0, 0)
+    ctx.strokeStyle = '#6b7280'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+    // N label
+    ctx.fillStyle = '#ef4444'
+    ctx.font = 'bold 11px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('N', Math.sin(nAngle) * (compLen + 12), -Math.cos(nAngle) * (compLen + 12) + 4)
+    ctx.restore()
+
+    // Hints
     ctx.fillStyle = 'rgba(156,163,175,0.4)'
     ctx.font = '9px sans-serif'
     ctx.textAlign = 'right'
-    ctx.fillText('Drag to rotate', W - 8, H - 6)
-  }, [allRects, footW, footH, rotation])
+    ctx.fillText('Drag to rotate · Scroll to zoom', W - 8, H - 6)
+  }, [allRects, footW, footH, rotation, zoom3d])
 
   useEffect(() => { draw() }, [draw])
+
+  // Scroll-to-zoom
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const handler = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setZoom3d(prev => Math.max(0.4, Math.min(3, prev * (1 - e.deltaY * 0.001))))
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [])
 
   const onMouseDown = e => { dragRef.current = { active: true, lastX: e.clientX, lastY: e.clientY } }
   const onMouseMove = e => {
