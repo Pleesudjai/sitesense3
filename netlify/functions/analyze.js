@@ -2099,7 +2099,6 @@ function generateRuleBasedReport(summary, gisData, evidencePack) {
   if ((summary.avg_slope_pct || 0) <= 5 && (summary.shrink_swell || '').toLowerCase() === 'high') {
     tradeoffs.push('Flat terrain simplifies construction, but expansive soil requires a more expensive foundation system (PT slab).')
   }
-  const sdc = (summary.seismic_sdc || '').toUpperCase()
   if (['A', 'B'].includes(sdc) && (summary.wind_mph || 0) > 110) {
     tradeoffs.push('Low seismic risk, but high wind loads will drive structural design and increase framing costs.')
   }
