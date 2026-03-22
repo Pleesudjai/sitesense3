@@ -324,7 +324,12 @@ async function getSoilData(polygon) {
   const dominant = series.length ? series[0] : null
   const texture = dominant?.texture || (sdaData?.surface_texture?.split(' ')[0]) || 'L'
   const shrinkSwell = SHRINK_SWELL[texture] || 'Low'
-  const caliche = cy < 37 && cx < -104 && ['S', 'LS', 'SL', 'SCL'].includes(texture)
+  // Caliche occurs in arid Southwest: AZ, NM, west TX, south CA, south NV, south UT
+  const caliche = (
+    (cy < 37 && cy > 25 && cx < -100 && cx > -125) && // arid Southwest bbox
+    ['S', 'LS', 'SL', 'SCL'].includes(texture) &&
+    (cy < 35 || cx < -109) // exclude humid east Texas
+  )
 
   // Hydrologic soil group from SDA
   const hsg = sdaData?.hydgrp || _estimateHSG(texture)
@@ -457,9 +462,17 @@ function _bearingHint(texture, drainage, shrinkSwell, bearingPsf, expansiveRisk,
 }
 
 function defaultSoil(lat, lon) {
+  // Arizona
   if (lat > 31 && lat < 36 && lon > -115 && lon < -109)
     return { series_name: 'Mohave-Laveen (AZ typical)', texture_class: 'SL', texture_description: 'Sandy Loam', drainage_class: 'well drained', shrink_swell: 'Low', caliche: true, hydrologic_group: 'A', hydrologic_group_description: HSG_DESC.A, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Moderate', septic_suitable: true, building_limitations: ['Caliche hardpan likely — mechanical breaking needed'], bearing_hint: 'Variable — caliche possible; get soil boring' }
-  return { series_name: 'Unknown', texture_class: 'L', texture_description: 'Loam', drainage_class: 'well drained', shrink_swell: 'Low', caliche: false, hydrologic_group: 'B', hydrologic_group_description: HSG_DESC.B, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Low', septic_suitable: true, building_limitations: [], bearing_hint: 'Moderate — verify with geotechnical investigation' }
+  // Florida / Gulf Coast
+  if (lat > 25 && lat < 31 && lon > -98 && lon < -80)
+    return { series_name: 'Myakka-Immokalee (FL/Gulf typical)', texture_class: 'S', texture_description: 'Sand (drains fast, low bearing)', drainage_class: 'somewhat poorly drained', shrink_swell: 'Low', caliche: false, hydrologic_group: 'A', hydrologic_group_description: HSG_DESC.A, flooding_frequency: 'None', ponding_frequency: 'Occasional', restrictive_depth_in: 36, corrosion_concrete: 'Moderate', corrosion_steel: 'High', septic_suitable: false, building_limitations: ['Shallow water table — dewatering likely needed during construction', 'Sandy soil — compaction testing required'], bearing_hint: 'Variable (~3000 psf) — sandy with shallow water table; verify with geotechnical investigation' }
+  // California coast
+  if (lat > 37 && lat < 42 && lon > -125 && lon < -120)
+    return { series_name: 'Variable (CA coast)', texture_class: 'L', texture_description: 'Loam (well-balanced)', drainage_class: 'well drained', shrink_swell: 'Moderate', caliche: false, hydrologic_group: 'B', hydrologic_group_description: HSG_DESC.B, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Low', septic_suitable: true, building_limitations: ['Seismically active region — verify liquefaction potential'], bearing_hint: 'Moderate (~2000 psf) — variable conditions; seismic + geotechnical investigation required' }
+  // Generic national default
+  return { series_name: 'Unknown', texture_class: 'L', texture_description: 'Loam (well-balanced)', drainage_class: 'well drained', shrink_swell: 'Low', caliche: false, hydrologic_group: 'B', hydrologic_group_description: HSG_DESC.B, flooding_frequency: 'None', ponding_frequency: 'None', restrictive_depth_in: null, corrosion_concrete: 'Low', corrosion_steel: 'Low', septic_suitable: true, building_limitations: [], bearing_hint: 'Moderate (~2000 psf) — verify with geotechnical investigation' }
 }
 
 // ─── SOIL ZONES (SSURGO map unit polygons as GeoJSON) ────────────────────────
@@ -652,7 +665,7 @@ function wktToGeoJSON(wkt) {
 
 async function getSeismicData(polygon) {
   const [cx, cy] = polygonCentroid(polygon.coordinates)
-  let seismic = azSeismicDefaults(cy, cx)
+  let seismic = defaultSeismicValues(cy, cx)
   try {
     const params = new URLSearchParams({ latitude: cy, longitude: cx, riskCategory: 'II', siteClass: 'D', title: 'SiteSense' })
     const res = await fetch(`https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
@@ -667,25 +680,55 @@ async function getSeismicData(polygon) {
   return { ...seismic, wind_mph: lookupWindSpeed(cy, cx), center_lat: cy, center_lon: cx }
 }
 
-function azSeismicDefaults(lat, lon) {
+function defaultSeismicValues(lat, lon) {
   if (lon > -110.5 && lat > 33.5) return { ss: 0.25, s1: 0.09, sds: 0.17, sd1: 0.06 }
   return { ss: 0.06, s1: 0.02, sds: 0.04, sd1: 0.01 }
 }
 
 function lookupWindSpeed(lat, lon) {
-  if (lat > 28 && lat < 31 && lon > -96 && lon < -93) return 130
-  if (lat > 34.5 && lat < 36 && lon > -113 && lon < -110) return 100
-  if (lat > 31 && lat < 37 && lon > -115 && lon < -109) return 90
-  return 95
+  // Hurricane coast (ASCE 7-22 Fig 26.5-1)
+  if (lat > 24 && lat < 31 && lon > -98 && lon < -80) return 140   // Gulf Coast FL/TX/LA
+  if (lat > 25 && lat < 28 && lon > -82 && lon < -80) return 170   // South FL (Miami-Dade)
+  if (lat > 33 && lat < 37 && lon > -80 && lon < -75) return 130   // Carolinas coast
+  if (lat > 28 && lat < 31 && lon > -96 && lon < -93) return 130   // Houston/Galveston
+  if (lat > 39 && lat < 41 && lon > -75 && lon < -73) return 115   // NYC/NJ coast
+  // Hawaii
+  if (lat > 18 && lat < 23 && lon > -161 && lon < -154) return 130
+  // Great Plains tornado alley
+  if (lat > 33 && lat < 38 && lon > -100 && lon < -94) return 115  // OK/KS/N TX
+  // Mountain/desert
+  if (lat > 34.5 && lat < 36 && lon > -113 && lon < -110) return 100  // N Arizona
+  if (lat > 31 && lat < 37 && lon > -115 && lon < -109) return 90    // SW general
+  // Pacific coast (lower wind)
+  if (lat > 32 && lat < 49 && lon > -125 && lon < -120) return 85
+  return 95  // national default
 }
 
 // ─── FIRE RISK (rule-based) ───────────────────────────────────────────────────
 
 const HIGH_RISK_ZONES = [
+  // Arizona WUI
   { bbox: [34.3, -113.0, 35.0, -111.5], risk: 'High' },
   { bbox: [34.0, -112.0, 35.0, -110.0], risk: 'Very High' },
   { bbox: [33.5, -110.5, 34.5, -109.0], risk: 'High' },
   { bbox: [34.8, -112.5, 35.5, -111.0], risk: 'High' },
+  // California WUI
+  { bbox: [33.5, -118.5, 34.5, -117.0], risk: 'Very High' },  // LA/San Bernardino
+  { bbox: [36.5, -122.5, 38.5, -120.0], risk: 'High' },        // NorCal Sierra
+  { bbox: [32.5, -117.5, 33.5, -116.0], risk: 'High' },        // San Diego backcountry
+  { bbox: [38.5, -123.0, 41.0, -120.5], risk: 'High' },        // Redding/Shasta
+  // Colorado Front Range
+  { bbox: [38.5, -106.0, 40.5, -104.5], risk: 'High' },
+  // Pacific Northwest
+  { bbox: [42.0, -123.0, 44.0, -120.5], risk: 'Moderate' },    // Southern Oregon
+  { bbox: [46.5, -122.5, 48.5, -120.0], risk: 'Moderate' },    // Eastern WA
+  // Texas Hill Country
+  { bbox: [29.5, -99.5, 31.5, -97.0], risk: 'Moderate' },
+  // Southeast (prescribed burn regions)
+  { bbox: [30.0, -86.0, 32.0, -82.0], risk: 'Moderate' },      // FL panhandle/GA
+  // Mountain West
+  { bbox: [42.0, -115.0, 44.5, -110.0], risk: 'Moderate' },    // Idaho/Montana
+  { bbox: [36.0, -107.0, 37.5, -105.0], risk: 'High' },        // Northern NM
 ]
 const FIRE_DESC = { Low: 'Low wildfire risk', Moderate: 'Moderate wildfire risk — Class A roofing recommended', High: 'High wildfire risk — WUI requirements apply (ASCE 7-22 Ch.27)', 'Very High': 'Very High wildfire risk — ignition-resistant construction required' }
 
@@ -766,14 +809,52 @@ function estimateStructuralLoads(windMph, sds, sd1, sdc, elevationFt) {
 
 // ─── COST ────────────────────────────────────────────────────────────────────
 
-const REGION_MULT = { phoenix: 0.95, tucson: 0.88, flagstaff: 1.05, prescott: 0.98, default: 0.95 }
+const REGION_MULT = {
+  // Metro overrides
+  phoenix: 0.95, tucson: 0.88, flagstaff: 1.05, prescott: 0.98,
+  houston: 0.89, dallas: 0.95, austin: 1.01, 'san antonio': 0.85,
+  'los angeles': 1.35, 'san francisco': 1.45, 'san diego': 1.25, sacramento: 1.10,
+  denver: 1.08, seattle: 1.15, portland: 1.05, 'las vegas': 1.00,
+  'salt lake city': 1.02, boise: 0.95, miami: 1.10, tampa: 0.95,
+  orlando: 0.95, atlanta: 0.92, charlotte: 0.90, nashville: 0.93,
+  chicago: 1.02, minneapolis: 0.98, detroit: 0.88, 'new york': 1.25,
+  boston: 1.15, philadelphia: 1.02, washington: 1.10, baltimore: 1.02,
+  'kansas city': 0.88, 'st louis': 0.86, indianapolis: 0.86,
+  'oklahoma city': 0.82, albuquerque: 0.88,
+  default: 0.95,
+}
 const FND_COSTS = { DEEP_PILE: { low: 45, high: 80 }, ELEVATED_PILE: { low: 35, high: 65 }, DRILLED_CAISSON: { low: 25, high: 45 }, DEEP_PILE_SEISMIC: { low: 40, high: 70 }, POST_TENSIONED_SLAB: { low: 14, high: 22 }, GRADE_BEAM_ON_PIERS: { low: 18, high: 30 }, MAT_FOUNDATION: { low: 20, high: 35 }, CONVENTIONAL_SLAB: { low: 8, high: 15 } }
 
 function identifyRegion(lat, lon) {
+  // Arizona
   if (lat > 33.2 && lat < 34.0 && lon > -113.0 && lon < -111.5) return 'phoenix'
   if (lat > 31.7 && lat < 32.5 && lon > -111.3 && lon < -110.5) return 'tucson'
   if (lat > 35.0 && lat < 35.5 && lon > -111.8 && lon < -111.3) return 'flagstaff'
-  if (lat > 34.4 && lat < 34.7 && lon > -113.0 && lon < -112.2) return 'prescott'
+  if (lat > 34.3 && lat < 34.8 && lon > -112.8 && lon < -112.2) return 'prescott'
+  // Texas
+  if (lat > 29.5 && lat < 30.2 && lon > -96.0 && lon < -95.0) return 'houston'
+  if (lat > 32.5 && lat < 33.2 && lon > -97.0 && lon < -96.4) return 'dallas'
+  if (lat > 30.0 && lat < 30.6 && lon > -98.0 && lon < -97.4) return 'austin'
+  if (lat > 29.2 && lat < 29.7 && lon > -98.8 && lon < -98.2) return 'san antonio'
+  // California
+  if (lat > 33.7 && lat < 34.3 && lon > -118.7 && lon < -117.8) return 'los angeles'
+  if (lat > 37.5 && lat < 38.0 && lon > -122.8 && lon < -122.0) return 'san francisco'
+  if (lat > 32.5 && lat < 33.0 && lon > -117.4 && lon < -116.8) return 'san diego'
+  // Mountain/West
+  if (lat > 39.5 && lat < 40.0 && lon > -105.2 && lon < -104.5) return 'denver'
+  if (lat > 47.3 && lat < 47.8 && lon > -122.6 && lon < -122.0) return 'seattle'
+  if (lat > 45.3 && lat < 45.7 && lon > -123.0 && lon < -122.3) return 'portland'
+  if (lat > 35.9 && lat < 36.4 && lon > -115.5 && lon < -114.8) return 'las vegas'
+  if (lat > 40.5 && lat < 41.0 && lon > -112.2 && lon < -111.5) return 'salt lake city'
+  // Southeast
+  if (lat > 25.5 && lat < 26.5 && lon > -80.5 && lon < -80.0) return 'miami'
+  if (lat > 27.7 && lat < 28.2 && lon > -82.8 && lon < -82.2) return 'tampa'
+  if (lat > 33.5 && lat < 34.0 && lon > -84.8 && lon < -84.0) return 'atlanta'
+  // Northeast
+  if (lat > 40.5 && lat < 41.0 && lon > -74.3 && lon < -73.7) return 'new york'
+  if (lat > 42.2 && lat < 42.5 && lon > -71.3 && lon < -70.8) return 'boston'
+  if (lat > 41.6 && lat < 42.1 && lon > -88.0 && lon < -87.3) return 'chicago'
+  if (lat > 38.7 && lat < 39.1 && lon > -77.3 && lon < -76.8) return 'washington'
   return 'default'
 }
 

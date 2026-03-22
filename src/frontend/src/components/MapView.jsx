@@ -97,8 +97,8 @@ export default function MapView({ onPolygonChange, onSearchError, result, search
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: ESRI_SATELLITE_STYLE,
-      center: [-112.07, 33.45],
-      zoom: 14,
+      center: [-98.5, 39.8],  // Continental US center
+      zoom: 4,
       dragRotate: false,       // ← disables tilt AND rotation via right-click/touch
       pitchWithRotate: false,  // ← locks to top-down view
       touchPitch: false,
