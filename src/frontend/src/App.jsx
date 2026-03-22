@@ -236,6 +236,7 @@ export default function App() {
                       <div className={`rounded-lg p-3 border-l-4 ${
                         result.ai_report.verdict === 'Good Candidate' ? 'bg-green-950/30 border-green-500' :
                         result.ai_report.verdict === 'High Risk' ? 'bg-red-950/30 border-red-500' :
+                        result.ai_report.verdict === 'Moderate Risk' ? 'bg-orange-950/30 border-orange-500' :
                         'bg-amber-950/30 border-amber-500'
                       }`}>
                         <p className="text-sm font-bold text-white">{result.ai_report.verdict}</p>
