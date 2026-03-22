@@ -10,7 +10,7 @@ import PriceForecastPanel from './components/PriceForecastPanel'
 import { generateReport } from './components/ReportGenerator'
 import { analyzeParcel } from './api'
 
-const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', forecast: 'Price Forecast', engineering: 'Engineering Q&A' }
+const TAB_LABELS = { site: 'Site Analysis', house: 'House Concept', forecast: 'Build Now or Wait?', engineering: 'Engineering Q&A' }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('site')

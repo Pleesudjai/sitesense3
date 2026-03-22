@@ -101,8 +101,8 @@ export default function PriceForecastPanel({ address, parcelReady, siteData, hou
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-teal">Price Forecast</h2>
-        <p className="text-xs text-gray-400">Government-data-driven construction cost prediction for decision support</p>
+        <h2 className="text-lg font-bold text-teal">Should You Build Now or Wait?</h2>
+        <p className="text-xs text-gray-400">See how construction costs may change over time using official government economic data</p>
       </div>
 
       {/* ─── Input summary from House Concept ─── */}
@@ -180,32 +180,29 @@ export default function PriceForecastPanel({ address, parcelReady, siteData, hou
             </div>
           </div>
 
-          {/* Forecast table */}
+          {/* Forecast table — matching PDF "Build Now or Wait" framing */}
           <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-            <h3 className="text-sm font-semibold text-gray-300 mb-2">Detailed Projections</h3>
+            <h3 className="text-sm font-semibold text-gray-300 mb-2">What Happens If You Wait</h3>
+            <p className="text-xs text-gray-500 mb-3">Construction costs change every year. Here's what your project could cost if you delay.</p>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-700">
-                  <th className="text-left py-1">Horizon</th>
-                  <th className="text-right py-1">Low</th>
-                  <th className="text-right py-1">Expected</th>
-                  <th className="text-right py-1">High</th>
-                  <th className="text-right py-1">Change</th>
+                  <th className="text-left py-1">When</th>
+                  <th className="text-right py-1">Expected Cost</th>
+                  <th className="text-right py-1">Extra You'd Pay</th>
                 </tr>
               </thead>
               <tbody>
-                {[{ year: 0, label: 'Now', ...result.currentEstimate }, ...result.forecasts.map(f => ({ ...f, label: `Year ${f.year}` }))].map((f, i) => {
-                  const change = f.year === 0 ? 0 : ((f.expected / result.currentEstimate.expected - 1) * 100)
+                {[{ year: 0, label: 'Build Now', ...result.currentEstimate }, ...result.forecasts.map(f => ({ ...f, label: `Wait ${f.year} year${f.year > 1 ? 's' : ''}` }))].map((f, i) => {
+                  const extra = f.year === 0 ? 0 : f.expected - result.currentEstimate.expected
                   return (
-                    <tr key={i} className="border-b border-gray-800">
-                      <td className="py-1.5 font-medium text-white">{f.label}</td>
-                      <td className="py-1.5 text-right text-gray-400">{fmt(f.low)}</td>
-                      <td className="py-1.5 text-right text-teal font-semibold">{fmt(f.expected)}</td>
-                      <td className="py-1.5 text-right text-gray-400">{fmt(f.high)}</td>
-                      <td className="py-1.5 text-right">
+                    <tr key={i} className={`border-b border-gray-800 ${f.year === 0 ? 'bg-teal-950/30' : ''}`}>
+                      <td className={`py-2 font-medium ${f.year === 0 ? 'text-teal' : 'text-white'}`}>{f.label}</td>
+                      <td className={`py-2 text-right font-semibold ${f.year === 0 ? 'text-teal' : 'text-white'}`}>{fmt(f.expected)}</td>
+                      <td className="py-2 text-right">
                         {f.year === 0
                           ? <span className="text-gray-500">—</span>
-                          : <span className="text-amber-400">+{change.toFixed(1)}%</span>
+                          : <span className="text-red-400 font-semibold">+{fmt(extra)}</span>
                         }
                       </td>
                     </tr>
@@ -213,6 +210,18 @@ export default function PriceForecastPanel({ address, parcelReady, siteData, hou
                 })}
               </tbody>
             </table>
+            {/* Build now conclusion */}
+            {result.forecasts?.length > 0 && (() => {
+              const yr5 = result.forecasts.find(f => f.year === 5)
+              const extra5 = yr5 ? yr5.expected - result.currentEstimate.expected : 0
+              return extra5 > 0 ? (
+                <div className="mt-3 bg-amber-950/30 border border-amber-700/40 rounded-lg p-3">
+                  <p className="text-xs text-amber-300 font-semibold">
+                    Waiting 5 years could add approximately {fmt(extra5)} to your construction cost. Building sooner is likely more cost-effective.
+                  </p>
+                </div>
+              ) : null
+            })()}
           </div>
 
           {/* Indicator breakdown */}
