@@ -72,7 +72,10 @@ export default function App() {
       const res = await analyzeParcel(polygon, { ...prefs, address })
       setResult(res.data)
     } catch (e) {
-      setError(e.message)
+      const msg = e.message === 'Failed to fetch'
+        ? 'Could not reach the server — check your connection or try a smaller parcel. The analysis may have timed out.'
+        : e.message
+      setError(msg)
     } finally {
       setLoading(false)
     }

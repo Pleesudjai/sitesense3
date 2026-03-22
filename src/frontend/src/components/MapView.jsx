@@ -141,7 +141,15 @@ export default function MapView({ onPolygonChange, onSearchError, result, search
           // show a tiny dot for corner 1
           setRectSource(makeRectGeoJSON([lng, lat], [lng + 0.0001, lat + 0.0001]))
         } else if (drawMode.current === 'second') {
-          finalizeRect(corner1.current, [lng, lat])
+          // Ensure minimum rectangle size (prevent line-like parcels)
+          const c1 = corner1.current
+          const dlng = Math.abs(lng - c1[0])
+          const dlat = Math.abs(lat - c1[1])
+          // If one dimension is too small, enforce a minimum (~30m at mid-latitudes)
+          const minDeg = 0.0003
+          const c2lng = dlng < minDeg ? (lng > c1[0] ? c1[0] + minDeg : c1[0] - minDeg) : lng
+          const c2lat = dlat < minDeg ? (lat > c1[1] ? c1[1] + minDeg : c1[1] - minDeg) : lat
+          finalizeRect(c1, [c2lng, c2lat])
         }
       })
 
