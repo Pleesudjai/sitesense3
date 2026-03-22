@@ -1362,13 +1362,55 @@ function expertResult(name, verdict, reasons, risks, opportunities, confidence, 
   return { expert: name, verdict, reasons, risks, opportunities, confidence, unknowns, next_checks: nextChecks, evidence_refs: evidenceRefs }
 }
 
-function runFoundationAdvisor(ep) {
+// Shared: call Claude as a specialist expert
+async function callExpertLLM(expertName, systemPrompt, evidence, schema) {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return null  // fall back to rule-based
+
+  try {
+    const client = new Anthropic({ apiKey })
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content: `${systemPrompt}\n\nEVIDENCE:\n${JSON.stringify(evidence, null, 2)}\n\nRespond with ONLY valid JSON matching this schema:\n${JSON.stringify(schema)}`
+      }],
+    })
+    const text = msg.content[0].text
+    return JSON.parse(text)
+  } catch (e) {
+    console.warn(`${expertName} LLM call failed:`, e.message)
+    return null  // fall back to rule-based
+  }
+}
+
+async function runFoundationAdvisor(ep) {
   // ep = evidence_pack
   const soil = ep.retrieval?.soil || {}
   const slope = ep.computed?.slope || {}
   const flood = ep.retrieval?.flood || {}
   const fnd = ep.computed?.foundation || {}
 
+  // Try Claude first
+  const llmResult = await callExpertLLM(
+    'foundation-advisor',
+    `You are a geotechnical and foundation specialist reviewing screening-level site data for early feasibility. You are NOT designing a foundation — you are flagging risks, estimating cost impact, and identifying what professional investigation is still needed.
+
+DOCTRINE:
+- IBC 2021 §1806 Table 1806.2: Presumptive bearing by soil type
+- ACI 360R-10 §5.4: PT slab for expansive soils (PI > 25 or shrink-swell High)
+- ACI 360R-10 §4.2: Grade beams for caliche/hardpan
+- ASCE 7-22 Ch.5: Elevated foundations in flood zones AE/VE
+- IBC §1803.5.5: Deep foundations for organic/peat soils
+
+Analyze the soil, slope, and flood data. Identify foundation risks, cost implications, and what the owner should verify with a geotechnical engineer.`,
+    { soil, slope, flood, foundation: fnd },
+    { expert: 'foundation-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
+  )
+  if (llmResult) return { ...llmResult, expert: 'foundation-advisor', evidence_refs: ['retrieval.soil', 'computed.slope', 'retrieval.flood', 'computed.foundation'] }
+
+  // Existing rule-based fallback
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1428,13 +1470,31 @@ function runFoundationAdvisor(ep) {
   return expertResult('foundation-advisor', verdict, reasons, risks, opps, conf, unknowns, checks, refs)
 }
 
-function runStormwaterReviewer(ep) {
+async function runStormwaterReviewer(ep) {
   const flood = ep.retrieval?.flood || {}
   const soil = ep.retrieval?.soil || {}
   const precip = ep.retrieval?.precipitation || {}
   const runoff = ep.computed?.runoff || {}
   const slope = ep.computed?.slope || {}
 
+  // Try Claude first
+  const llmResult = await callExpertLLM(
+    'stormwater-reviewer',
+    `You are a civil/drainage engineer reviewing screening-level stormwater data. You are NOT designing a drainage system — you are flagging drainage difficulty, detention requirements, and flood risk.
+
+DOCTRINE:
+- FEMA flood zones: AE/VE require elevated construction and flood insurance
+- Hydrologic Soil Group D: very slow infiltration, detention likely required
+- Rational Method Q=CiA for preliminary runoff estimation
+- Local jurisdictions control final drainage design requirements
+
+Analyze flood zone, soil HSG, runoff data, and slope. Identify drainage risks, detention burden, and what civil engineer verification is needed.`,
+    { flood, soil_hsg: soil.hydrologic_group, precipitation: precip, runoff, slope },
+    { expert: 'stormwater-reviewer', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
+  )
+  if (llmResult) return { ...llmResult, expert: 'stormwater-reviewer', evidence_refs: ['retrieval.flood', 'retrieval.soil.hydrologic_group', 'computed.runoff', 'computed.slope'] }
+
+  // Existing rule-based fallback
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1471,11 +1531,23 @@ function runStormwaterReviewer(ep) {
   return expertResult('stormwater-reviewer', verdict, reasons, risks, opps, soil.confidence || 'estimated', unknowns, checks, refs)
 }
 
-function runSiteDesignAdvisor(ep) {
+async function runSiteDesignAdvisor(ep) {
   const buildable = ep.computed?.buildable_area || {}
   const slope = ep.computed?.slope || {}
   const parcel = ep.parcel || {}
 
+  // Try Claude first
+  const llmResult = await callExpertLLM(
+    'site-design-advisor',
+    `You are a site planning specialist reviewing buildable envelope data. You are NOT creating a site plan — you are evaluating how much of the parcel is realistically usable and what constraints affect placement.
+
+Analyze buildable area percentage, slope constraints, and setback assumptions. Identify design flexibility, constraint severity, and what zoning verification is needed. Consider whether a compact or spread concept works better.`,
+    { buildable_area: buildable, slope, parcel },
+    { expert: 'site-design-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
+  )
+  if (llmResult) return { ...llmResult, expert: 'site-design-advisor', evidence_refs: ['computed.buildable_area', 'computed.slope', 'parcel'] }
+
+  // Existing rule-based fallback
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1511,10 +1583,27 @@ function runSiteDesignAdvisor(ep) {
   return expertResult('site-design-advisor', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
 }
 
-function runCostForecaster(ep) {
+async function runCostForecaster(ep) {
   const costs = ep.computed?.costs || {}
   const fnd = ep.computed?.foundation || {}
 
+  // Try Claude first
+  const llmResult = await callExpertLLM(
+    'cost-forecaster',
+    `You are a construction cost analyst reviewing ROM site preparation estimates. You are NOT providing a contractor bid — you are identifying cost drivers, comparing build-now vs wait, and flagging where estimates are uncertain.
+
+DOCTRINE:
+- ENR CCI 4.5%/year historical construction inflation
+- BEA Regional Price Parities for location adjustment
+- Foundation cost premiums by type (conventional $8-15/SF, PT $14-22/SF, pile $45-80/SF)
+
+Analyze cost breakdown, regional multiplier, foundation premium, and inflation projection. Identify the top cost drivers and whether timing matters.`,
+    { costs, foundation: fnd },
+    { expert: 'cost-forecaster', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
+  )
+  if (llmResult) return { ...llmResult, expert: 'cost-forecaster', evidence_refs: ['computed.costs', 'computed.foundation'] }
+
+  // Existing rule-based fallback
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1577,7 +1666,27 @@ function routeExperts(ep) {
   return { selected_experts: experts, routing_reason }
 }
 
-function runParcelStrategist(ep, expertFindings) {
+async function runParcelStrategist(ep, expertFindings) {
+  // Try Claude first
+  const llmResult = await callExpertLLM(
+    'parcel-strategist',
+    `You are the lead parcel strategist synthesizing findings from multiple domain specialists. You are NOT approving the site — you are forming one clear feasibility judgment.
+
+You receive findings from: foundation advisor, stormwater reviewer, site design advisor, and cost forecaster. Merge their verdicts into one parcel-level assessment.
+
+Identify:
+1. Overall verdict (Good Candidate / Proceed with Caution / High Risk)
+2. The 2-3 most important factors across all specialists
+3. Key tradeoffs where competing signals create tension
+4. What the owner/architect should do next
+
+Be specific — reference the actual data values from the specialist findings.`,
+    { parcel: ep.parcel, expert_findings: expertFindings },
+    { verdict: 'Good Candidate|Proceed with Caution|High Risk', verdict_reason: '...', top_reasons: ['...'], top_risks: ['...'], top_opportunities: ['...'], tradeoffs: ['...'], unknowns: ['...'], next_steps: [{ action: '...', who: '...', why: '...' }] }
+  )
+  if (llmResult) return llmResult
+
+  // Existing rule-based fallback
   // Merge all expert verdicts into one parcel-level verdict
   const verdicts = expertFindings.map(e => e.verdict)
   const hasHigh = verdicts.includes('high_risk')
@@ -2374,15 +2483,16 @@ exports.handler = async (event) => {
     // Run expert router
     const routing = routeExperts(evidencePack)
 
-    // Run selected experts
-    const expertFindings = []
-    if (routing.selected_experts.includes('foundation-advisor')) expertFindings.push(runFoundationAdvisor(evidencePack))
-    if (routing.selected_experts.includes('stormwater-reviewer')) expertFindings.push(runStormwaterReviewer(evidencePack))
-    if (routing.selected_experts.includes('site-design-advisor')) expertFindings.push(runSiteDesignAdvisor(evidencePack))
-    if (routing.selected_experts.includes('cost-forecaster')) expertFindings.push(runCostForecaster(evidencePack))
+    // Run specialist experts in parallel
+    const expertPromises = []
+    if (routing.selected_experts.includes('foundation-advisor')) expertPromises.push(runFoundationAdvisor(evidencePack))
+    if (routing.selected_experts.includes('stormwater-reviewer')) expertPromises.push(runStormwaterReviewer(evidencePack))
+    if (routing.selected_experts.includes('site-design-advisor')) expertPromises.push(runSiteDesignAdvisor(evidencePack))
+    if (routing.selected_experts.includes('cost-forecaster')) expertPromises.push(runCostForecaster(evidencePack))
+    const expertFindings = await Promise.all(expertPromises)
 
-    // Strategist synthesizes
-    const strategistResult = runParcelStrategist(evidencePack, expertFindings)
+    // Strategist + auditor run sequentially (they depend on expert findings)
+    const strategistResult = await runParcelStrategist(evidencePack, expertFindings)
 
     // Auditor validates
     const auditedReport = runDataQualityAuditor(evidencePack, strategistResult)
