@@ -164,14 +164,24 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
           )}
 
           {/* AI Summary */}
-          {(result.ai_report || result.aiSummary) && (
+          {(result.ai_report?.recommendation || result.ai_report?.verdict || result.aiSummary) && (
             <div className="bg-gray-800 rounded-lg p-4 space-y-3">
               <h3 className="text-xs font-semibold text-gray-400 mb-2">AI Summary</h3>
 
-              {result.ai_report ? (
+              {(result.ai_report?.recommendation || result.ai_report?.verdict) ? (
                 <>
-                  {/* Recommendation */}
-                  {result.ai_report.verdict && (
+                  {/* Recommendation text */}
+                  {result.ai_report.recommendation && (
+                    <div className="bg-teal-950/20 border border-teal-800/30 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-teal">{result.ai_report.recommendation}</p>
+                      {result.ai_report.reasoning && (
+                        <p className="text-xs text-gray-300 mt-1 leading-relaxed">{result.ai_report.reasoning}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Verdict (if present) */}
+                  {result.ai_report.verdict && !result.ai_report.recommendation && (
                     <div className={`rounded-lg p-3 border-l-4 ${
                       result.ai_report.verdict === 'Good Candidate' ? 'bg-green-950/30 border-green-500' :
                       result.ai_report.verdict === 'High Risk' ? 'bg-red-950/30 border-red-500' :
