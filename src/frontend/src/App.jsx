@@ -372,10 +372,13 @@ export default function App() {
                               <text x="80" y="154" textAnchor="middle" fill="#6b7280" fontSize="10">S</text>
                               <text x="10" y="83" textAnchor="middle" fill="#6b7280" fontSize="10">W</text>
                               <text x="150" y="83" textAnchor="middle" fill="#6b7280" fontSize="10">E</text>
-                              {/* Sun arc (east to west through south) */}
-                              <path d="M 135,80 A 55,55 0 0,1 25,80" fill="none" stroke="#fbbf24" strokeWidth="1" strokeDasharray="3,2" opacity="0.4" />
-                              <text x="135" y="70" fill="#fbbf24" fontSize="7" opacity="0.6">sunrise</text>
-                              <text x="25" y="70" fill="#fbbf24" fontSize="7" opacity="0.6" textAnchor="end">sunset</text>
+                              {/* Sun arc (sunrise E → south sky → sunset W) */}
+                              <path d="M 135,80 A 55,55 0 0,0 25,80" fill="none" stroke="#fbbf24" strokeWidth="1" strokeDasharray="3,2" opacity="0.4" />
+                              <text x="138" y="92" fill="#fbbf24" fontSize="7" opacity="0.6">sunrise</text>
+                              <text x="22" y="92" fill="#fbbf24" fontSize="7" opacity="0.6" textAnchor="end">sunset</text>
+                              {/* Sun peak at south */}
+                              <circle cx="80" cy="135" r="2" fill="#fbbf24" opacity="0.3" />
+                              <text x="80" y="145" textAnchor="middle" fill="#fbbf24" fontSize="6" opacity="0.3">noon</text>
                               {/* Building rectangle — rotated */}
                               <g transform={`rotate(${rotDeg}, 80, 80)`}>
                                 <rect x="55" y="58" width="50" height="44" fill="#1a3d4d" stroke="#02C39A" strokeWidth="1.5" rx="2" />

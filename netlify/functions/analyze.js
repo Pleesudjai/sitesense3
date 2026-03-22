@@ -1043,21 +1043,25 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
     const deg = i * 45
     let oScore = 50
 
-    // === Solar scoring (30% weight) ===
+    // === Solar scoring (25% weight) — uses cosine for smooth gradient ===
     const southness = Math.cos((deg - 180) * Math.PI / 180)
-    if (climate === 'cold') oScore += southness * 20
-    else if (climate === 'hot_arid') oScore += southness * 12
-    else if (climate === 'hot_humid') oScore += (deg >= 90 && deg <= 180 ? 10 : -3)
-    else oScore += southness * 15
+    if (climate === 'cold') oScore += southness * 18
+    else if (climate === 'hot_arid') oScore += southness * 10
+    else if (climate === 'hot_humid') {
+      // Hot humid: SE (135°) is ideal for cross-ventilation, continuous scoring
+      const seAlign = Math.cos((deg - 135) * Math.PI / 180)
+      oScore += seAlign * 12
+    }
+    else oScore += southness * 14
 
-    // === Terrain aspect scoring (30% weight) ===
+    // === Terrain aspect scoring (35% weight) — strongest differentiator ===
     // Face the same direction the slope descends (downhill views, natural drainage away)
-    const aspectAlign = Math.cos((deg - aspectDeg) * Math.PI / 180)  // 1.0 = aligned with slope
-    oScore += aspectAlign * 15  // strong terrain influence
+    const aspectAlign = Math.cos((deg - aspectDeg) * Math.PI / 180)
+    oScore += aspectAlign * 20  // strongest terrain influence
 
     // Cross-slope bonus: perpendicular to slope = natural cross-ventilation
     const crossSlope = Math.abs(Math.sin((deg - aspectDeg) * Math.PI / 180))
-    oScore += crossSlope * 5
+    oScore += crossSlope * 6
 
     // === West penalty (20% weight) ===
     if (deg === 270) oScore -= 12  // due west = worst afternoon heat
