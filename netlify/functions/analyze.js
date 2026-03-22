@@ -1429,11 +1429,23 @@ function expertResult(name, verdict, reasons, risks, opportunities, confidence, 
   return { expert: name, verdict, reasons, risks, opportunities, confidence, unknowns, next_checks: nextChecks, evidence_refs: evidenceRefs }
 }
 
+// Global time budget — track how much time we've spent so we don't exceed Netlify's 26s limit
+let _startTime = 0
+function setStartTime() { _startTime = Date.now() }
+function remainingMs() { return Math.max(0, 22000 - (Date.now() - _startTime)) } // 22s budget (4s buffer)
+
 // Shared: call Claude as a specialist expert
 // NEW PATTERN: receives ruleFindings so Claude EXTENDS them instead of starting from scratch
 async function callExpertLLM(expertName, systemPrompt, evidence, schema, ruleFindings) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
+
+  // Skip Claude if we're running low on time
+  const remaining = remainingMs()
+  if (remaining < 4000) {
+    console.warn(`${expertName}: skipping Claude — only ${remaining}ms remaining`)
+    return null
+  }
 
   try {
     const client = new Anthropic({ apiKey })
@@ -1455,15 +1467,18 @@ Your job is to:
 
     prompt += `\n\nEVIDENCE:\n${JSON.stringify(evidence, null, 2)}\n\nRespond with ONLY valid JSON matching this schema:\n${JSON.stringify(schema)}`
 
-    const msg = await client.messages.create({
+    // Race Claude call against time budget
+    const claudePromise = client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 800,
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }],
     })
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('time budget exceeded')), Math.min(remaining - 2000, 8000)))
+    const msg = await Promise.race([claudePromise, timeoutPromise])
     const text = msg.content[0].text
     return JSON.parse(text)
   } catch (e) {
-    console.warn(`${expertName} LLM call failed:`, e.message)
+    console.warn(`${expertName} LLM call skipped:`, e.message)
     return null
   }
 }
@@ -2195,8 +2210,8 @@ async function generateAiBrainReport(summary, gisData, evidencePack) {
   const apiKey = process.env.ANTHROPIC_API_KEY
 
   // Try Claude first, fall back to rule-based
-  if (!apiKey) {
-    console.log('No ANTHROPIC_API_KEY — using rule-based report')
+  if (!apiKey || remainingMs() < 5000) {
+    console.log(`${!apiKey ? 'No ANTHROPIC_API_KEY' : 'Time budget low (' + remainingMs() + 'ms)'} — using rule-based report`)
     return generateRuleBasedReport(summary, gisData, evidencePack)
   }
 
@@ -2674,6 +2689,8 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders(), body: '' }
 
   try {
+    setStartTime() // Start global time budget (22s for computation, 4s buffer)
+
     const body = JSON.parse(event.body || '{}')
     const polygon = body.polygon
     if (!polygon) throw new Error('polygon is required')
