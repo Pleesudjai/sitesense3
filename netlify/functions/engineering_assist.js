@@ -567,31 +567,38 @@ exports.handler = async (event) => {
     }
 
     // ── Auto-fetch GIS if address provided but no full site data ────────
+    // Only do GIS fetch if no API key (rule-based needs it). With Claude, skip to save time.
     let gisContext = ''
     let enrichedContext = context || {}
     const address = context?.address
-    if (address && !context?.soil) {
-      const geo = await geocodeLocation(address)
-      if (geo) {
-        const [soil, seismic, flood] = await Promise.all([
-          fetchSoilQuick(geo.lat, geo.lon),
-          fetchSeismicQuick(geo.lat, geo.lon),
-          fetchFloodQuick(geo.lat, geo.lon),
-        ])
-        gisContext = `\nLOCATION: ${address} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})` +
-          `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
-          `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
-          `\nFlood: Zone ${flood.zone}`
+    const hasApiKey = !!process.env.ANTHROPIC_API_KEY
+    if (address && !context?.soil && !hasApiKey) {
+      // Only fetch GIS for rule-based fallback — Claude can reason without it
+      try {
+        const geo = await geocodeLocation(address)
+        if (geo) {
+          const [soil, seismic, flood] = await Promise.all([
+            fetchSoilQuick(geo.lat, geo.lon),
+            fetchSeismicQuick(geo.lat, geo.lon),
+            fetchFloodQuick(geo.lat, geo.lon),
+          ])
+          gisContext = `\nLOCATION: ${address} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})` +
+            `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
+            `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
+            `\nFlood: Zone ${flood.zone}`
 
-        // Enrich context for rule-based fallback
-        enrichedContext = {
-          ...enrichedContext,
-          address,
-          soil: { texture: soil.texture, shrinkSwell: soil.shrinkSwell, caliche: soil.caliche },
-          seismic: { sds: seismic.sds, sd1: seismic.sd1, sdc: seismic.sdc, windMph: seismic.windMph },
-          flood: { zone: flood.zone },
+          enrichedContext = {
+            ...enrichedContext,
+            address,
+            soil: { texture: soil.texture, shrinkSwell: soil.shrinkSwell, caliche: soil.caliche },
+            seismic: { sds: seismic.sds, sd1: seismic.sd1, sdc: seismic.sdc, windMph: seismic.windMph },
+            flood: { zone: flood.zone },
+          }
         }
-      }
+      } catch { /* skip GIS on timeout */ }
+    } else if (address && hasApiKey) {
+      // With Claude available, just pass the address as text context
+      gisContext = `\nLOCATION: ${address}`
     }
 
     // ── Check API key ──────────────────────────────────────────────────────
@@ -618,15 +625,17 @@ exports.handler = async (event) => {
       userContent = `SITE DATA:${gisContext}\n\nQUESTION: ${question.trim()}`
     }
 
-    // ── Call Claude ────────────────────────────────────────────────────────
+    // ── Call Claude (with timeout to stay within Netlify's 26s limit) ────
     const client = new Anthropic({ apiKey })
 
-    const message = await client.messages.create({
+    const claudePromise = client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 1000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContent }],
     })
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
+    const message = await Promise.race([claudePromise, timeoutPromise])
 
     const rawText = message.content[0].text
 
