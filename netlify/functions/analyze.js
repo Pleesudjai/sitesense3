@@ -1477,6 +1477,55 @@ Analyze the soil, slope, and flood data. Identify foundation risks, cost implica
     reasons.push(`Low presumptive bearing (${soil.bearing_psf} psf) — geotechnical investigation critical`)
   }
 
+  // ── Compound risk detection ──────────────────────────────────────
+  // These are risks that only appear when multiple signals combine
+
+  // Compound 1: Expansive soil + slope = differential settlement
+  if ((soil.shrink_swell === 'High' || soil.expansive_risk === 'High') && slope.avg_pct > 5) {
+    verdict = 'high_risk'
+    reasons.push(`COMPOUND RISK: Expansive soil on ${slope.avg_pct?.toFixed(1)}% slope creates differential settlement risk — the uphill side heaves differently than downhill. PT slab must be designed for both expansion AND slope transition.`)
+    risks.push(`Additional $8-15K for stepped/stiffened PT slab design across the grade change`)
+    refs.push('COMPOUND: retrieval.soil.shrink_swell + computed.slope.avg_pct')
+  }
+
+  // Compound 2: Flood zone + poor drainage soil = compound water risk
+  if (['AE','VE','A','AO'].includes(flood.zone) && soil.hydrologic_group === 'D') {
+    reasons.push(`COMPOUND RISK: Flood zone ${flood.zone} combined with HSG D soil (very slow infiltration) — water accumulates on site during AND after flood events. Elevated foundation + detention basin both required.`)
+    risks.push('Double water management burden: flood elevation + poor infiltration detention')
+    refs.push('COMPOUND: retrieval.flood.zone + retrieval.soil.hydrologic_group')
+  }
+
+  // Compound 3: Caliche + steep slope = difficult excavation
+  if (soil.caliche && slope.avg_pct > 8) {
+    reasons.push(`COMPOUND RISK: Caliche hardpan on ${slope.avg_pct?.toFixed(1)}% slope — mechanical breaking is harder on slopes, may need stepped grade beams following terrain. Excavation cost increases significantly.`)
+    risks.push('Slope + caliche = excavation costs 2-3x typical flat-site caliche removal')
+    refs.push('COMPOUND: retrieval.soil.caliche + computed.slope.avg_pct')
+  }
+
+  // Compound 4: Low bearing + flood = foundation cost escalation
+  if (soil.bearing_psf && soil.bearing_psf < 1500 && ['AE','VE'].includes(flood.zone)) {
+    verdict = 'high_risk'
+    reasons.push(`COMPOUND RISK: Low bearing capacity (${soil.bearing_psf} psf) in flood zone ${flood.zone} — pile foundation must reach through weak surface soil to competent bearing stratum. Pile lengths may be excessive.`)
+    risks.push('Deep pile costs escalate when bearing stratum is far below grade')
+    refs.push('COMPOUND: retrieval.soil.bearing_psf + retrieval.flood.zone')
+  }
+
+  // Compound 5: Collapsible soil + any water source = collapse trigger
+  if (soil.collapsible && (['AE','VE','A'].includes(flood.zone) || soil.hydrologic_group === 'D')) {
+    verdict = 'high_risk'
+    reasons.push('COMPOUND RISK: Collapsible soil near water source — wetting from flood, poor drainage, or rising water table can trigger sudden settlement. Ground improvement is critical before any construction.')
+    refs.push('COMPOUND: retrieval.soil.collapsible + water_source')
+  }
+
+  // Compound 6: High seismic + expansive soil = competing foundation demands
+  const sdc = ep.retrieval?.seismic?.sdc
+  if (['D','E','F'].includes(sdc) && (soil.shrink_swell === 'High' || soil.expansive_risk === 'High')) {
+    verdict = 'high_risk'
+    reasons.push(`COMPOUND RISK: SDC ${sdc} seismic zone with expansive soil — foundation must resist both seismic lateral forces AND soil heave. Competing design demands increase engineering complexity and cost.`)
+    risks.push('Specialized foundation design needed — neither standard seismic nor standard expansive-soil solutions alone are adequate')
+    refs.push('COMPOUND: retrieval.seismic.sdc + retrieval.soil.shrink_swell')
+  }
+
   if (reasons.length === 0) {
     reasons.push('Standard soil and terrain conditions — conventional foundation feasible')
     opps.push('Conventional slab-on-ground is the most cost-effective option')
@@ -1541,6 +1590,27 @@ Analyze flood zone, soil HSG, runoff data, and slope. Identify drainage risks, d
     risks.push('Erosion control measures required')
   }
 
+  // ── Compound risk detection ──
+  // Compound: Steep slope + clay soil = erosion + poor infiltration
+  if (slope.avg_pct > 10 && (soil.hydrologic_group === 'C' || soil.hydrologic_group === 'D')) {
+    verdict = 'high_risk'
+    reasons.push(`COMPOUND RISK: ${slope.avg_pct?.toFixed(1)}% slope with HSG ${soil.hydrologic_group} soil — runoff velocity is high AND infiltration is poor. Erosion control + detention + energy dissipation all required.`)
+    risks.push('Triple drainage burden: erosion + runoff volume + low infiltration')
+    refs.push('COMPOUND: computed.slope + retrieval.soil.hydrologic_group')
+  }
+
+  // Compound: Flood + upstream slope = concentrated flow risk
+  if (['AE','VE','A'].includes(flood.zone) && slope.avg_pct > 5) {
+    reasons.push(`COMPOUND RISK: Flood zone with sloped terrain — surface water concentrates downhill toward the flood area. Building pad must be elevated above BOTH flood level AND local drainage convergence.`)
+    refs.push('COMPOUND: retrieval.flood + computed.slope')
+  }
+
+  // Compound: High runoff + flat terrain = ponding risk
+  if (runoff.detention_needed && slope.avg_pct < 2) {
+    reasons.push(`COMPOUND RISK: Detention required but terrain is nearly flat (${slope.avg_pct?.toFixed(1)}%) — gravity-fed detention is difficult. May need pumped system or above-grade retention.`)
+    risks.push('Flat-site detention is more expensive than gravity-fed systems on sloped sites')
+  }
+
   if (reasons.length === 0) {
     reasons.push('No major drainage concerns identified — standard stormwater management')
     opps.push('Simple drainage design likely sufficient')
@@ -1597,6 +1667,22 @@ Analyze buildable area percentage, slope constraints, and setback assumptions. I
     reasons.push(`Active constraints: ${constraints.join(', ')}`)
   }
 
+  // ── Compound risk detection ──
+  // Compound: Small buildable area + steep slope = very limited options
+  if (buildPct < 50 && slope.steep_fraction_pct > 15) {
+    verdict = 'high_risk'
+    reasons.push(`COMPOUND RISK: Only ${buildPct}% buildable AND ${slope.steep_fraction_pct}% of parcel is steep — the usable area that's also flat enough to build on is very small. May not accommodate desired program.`)
+    refs.push('COMPOUND: computed.buildable_area + computed.slope.steep_fraction_pct')
+  }
+
+  // Compound: Flood reduces area + wetlands reduce area = double constraint
+  const hasFlood = ep.retrieval?.flood?.zone && ['AE','VE','A','AO'].includes(ep.retrieval.flood.zone)
+  const hasWet = ep.retrieval?.wetlands?.present
+  if (hasFlood && hasWet) {
+    reasons.push('COMPOUND RISK: Both flood zone AND wetlands present — buildable envelope is reduced from two independent sources. Remaining usable area may be significantly smaller than parcel size suggests.')
+    risks.push('Dual environmental constraints may require costly mitigation or make some concept types infeasible')
+  }
+
   opps.push('Site analysis has identified candidate pad locations with scores')
   unknowns.push('Setbacks estimated — actual zoning setbacks not yet verified')
   checks.push('Verify setbacks and zoning with local jurisdiction')
@@ -1644,6 +1730,31 @@ Analyze cost breakdown, regional multiplier, foundation premium, and inflation p
   if (fnd.type && fnd.type !== 'CONVENTIONAL_SLAB') {
     risks.push(`Non-standard foundation (${fnd.type.replace(/_/g, ' ')}) adds cost premium`)
     refs.push('computed.foundation.type')
+  }
+
+  // ── Compound cost escalation ──
+  const fndType = fnd.type || 'CONVENTIONAL_SLAB'
+  const isExpensiveFnd = fndType !== 'CONVENTIONAL_SLAB'
+  const isFloodZone = ['AE','VE','A','AO'].includes(ep.retrieval?.flood?.zone)
+  const hasSteepSlope = (ep.computed?.slope?.avg_pct || 0) > 10
+
+  let compoundPremium = 0
+  if (isExpensiveFnd && isFloodZone) {
+    compoundPremium += 15
+    reasons.push(`COMPOUND COST: Non-standard foundation (${fndType.replace(/_/g,' ')}) in flood zone — both systems add cost independently, plus integration adds ~15% premium`)
+  }
+  if (isExpensiveFnd && hasSteepSlope) {
+    compoundPremium += 10
+    reasons.push(`COMPOUND COST: Non-standard foundation on ${ep.computed.slope.avg_pct?.toFixed(1)}% slope — grading + foundation interact, adding ~10% over flat-site estimate`)
+  }
+  if (isFloodZone && hasSteepSlope) {
+    compoundPremium += 8
+    reasons.push('COMPOUND COST: Flood zone on sloped terrain — drainage, elevation, and grading all interact, adding ~8% complexity premium')
+  }
+  if (compoundPremium > 0) {
+    const adjustedTotal = Math.round(total * (1 + compoundPremium / 100))
+    reasons.push(`Total compound premium: +${compoundPremium}% → adjusted site prep estimate: $${adjustedTotal.toLocaleString()}`)
+    verdict = 'moderate_risk'
   }
 
   opps.push('Building sooner locks in today\'s pricing')
@@ -1722,32 +1833,60 @@ Be specific — reference the actual data values from the specialist findings.`,
   const allUnknowns = [...new Set(expertFindings.flatMap(e => e.unknowns || []))]
   const allChecks = [...new Set(expertFindings.flatMap(e => e.next_checks || []))]
 
-  // Top tradeoffs — find competing signals
+  // ── Real tradeoff detection from compound signals ──
   const tradeoffs = []
   const fndExpert = expertFindings.find(e => e.expert === 'foundation-advisor')
   const siteExpert = expertFindings.find(e => e.expert === 'site-design-advisor')
   const costExpert = expertFindings.find(e => e.expert === 'cost-forecaster')
 
+  // Cross-expert compound: foundation expert says risk but site design says ok
   if (fndExpert?.verdict !== 'low_risk' && siteExpert?.verdict === 'low_risk') {
-    tradeoffs.push('Good buildable area but soil/foundation conditions increase costs')
+    tradeoffs.push(`Good buildable area (${ep.computed?.buildable_area?.pct_of_parcel || '?'}%) but soil/foundation conditions increase costs — the site is spacious but the ground is challenging`)
   }
   if (siteExpert?.verdict !== 'low_risk' && fndExpert?.verdict === 'low_risk') {
-    tradeoffs.push('Favorable soil conditions but limited buildable area constrains design options')
-  }
-  if (costExpert && (ep.computed?.costs?.regional_multiplier || 1) < 0.95) {
-    tradeoffs.push('Regional cost advantage partially offset by site-specific challenges')
-  }
-  if (tradeoffs.length === 0) {
-    tradeoffs.push(hasHigh ? 'Multiple significant constraints affect feasibility and cost' : 'No major competing factors — site conditions are relatively consistent')
+    tradeoffs.push(`Favorable soil conditions but limited buildable area (${ep.computed?.buildable_area?.pct_of_parcel || '?'}%) constrains what you can fit — good ground but not enough of it`)
   }
 
-  // Verdict reason
+  // Cross-expert: good cost region but expensive foundation
+  if (costExpert && (ep.computed?.costs?.regional_multiplier || 1) < 0.95 && fndExpert?.verdict !== 'low_risk') {
+    tradeoffs.push(`Regional cost advantage (${((1 - (ep.computed?.costs?.regional_multiplier || 1)) * 100).toFixed(0)}% below national average) is partially offset by foundation complexity — you save on labor but spend more on engineering`)
+  }
+
+  // Cross-expert: stormwater + foundation both flagged = water-related compound
+  const stormExpert = expertFindings.find(e => e.expert === 'stormwater-reviewer')
+  if (stormExpert?.verdict !== 'low_risk' && fndExpert?.verdict !== 'low_risk') {
+    tradeoffs.push('Both drainage and foundation are flagged — water management and structural systems must be designed together, not independently. Coordinate civil and structural engineering from the start.')
+  }
+
+  // Cross-expert: all experts low risk but cost still rising
+  if (!hasHigh && !hasMod && costExpert) {
+    const proj5 = ep.computed?.costs?.projections?.[5] || 0
+    const now = ep.computed?.costs?.total_now || 0
+    if (proj5 > now * 1.2) {
+      tradeoffs.push(`Site is favorable but construction costs are rising — waiting 5 years adds ~$${Math.round(proj5 - now).toLocaleString()} at current inflation rates. Building sooner saves money.`)
+    }
+  }
+
+  // Count compound risks across ALL expert reasons
+  const compoundCount = expertFindings.reduce((c, e) => c + (e.reasons || []).filter(r => r.startsWith('COMPOUND')).length, 0)
+  if (compoundCount >= 2) {
+    tradeoffs.push(`${compoundCount} compound risks detected — these are interactions between multiple site conditions that individual assessments would miss. Professional coordination across disciplines is especially important.`)
+  }
+
+  if (tradeoffs.length === 0) {
+    tradeoffs.push(hasHigh ? 'Multiple significant constraints affect feasibility and cost' : 'No major competing factors — site conditions are relatively consistent across disciplines')
+  }
+
+  // ── Richer verdict reason ──
   const topIssues = allRisks.slice(0, 2).join('. ')
-  const verdictReason = hasHigh
-    ? `Significant site challenges identified: ${topIssues}`
-    : hasMod
-      ? `Site is buildable but some conditions may increase costs: ${topIssues}`
-      : 'No major risk factors detected — site appears suitable for standard construction'
+  const compoundReasons = expertFindings.flatMap(e => (e.reasons || []).filter(r => r.startsWith('COMPOUND')))
+  const verdictReason = compoundReasons.length > 0
+    ? `${compoundReasons.length} compound risk(s) detected: ${compoundReasons[0].replace('COMPOUND RISK: ', '').split('—')[0].trim()}${compoundReasons.length > 1 ? ` and ${compoundReasons.length - 1} more` : ''}`
+    : hasHigh
+      ? `Significant site challenges identified: ${topIssues}`
+      : hasMod
+        ? `Site is buildable but some conditions may increase costs: ${topIssues}`
+        : 'No major risk factors detected — site appears suitable for standard construction'
 
   return {
     verdict, verdict_reason: verdictReason,
