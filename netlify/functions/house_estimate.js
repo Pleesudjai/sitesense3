@@ -21,7 +21,45 @@ function corsHeaders() {
 
 const QUALITY_RATES = { economy: 125, mid: 175, premium: 250, luxury: 350 }
 
-const REGION_MULT = { phoenix: 0.95, tucson: 0.88, flagstaff: 1.05, prescott: 0.98, default: 0.95 }
+// BEA Regional Price Parities — state-level (2023, housing component)
+const RPP_STATE = {
+  AL: 0.87, AK: 1.08, AZ: 0.97, AR: 0.84, CA: 1.35, CO: 1.08, CT: 1.12, DE: 1.02,
+  FL: 1.02, GA: 0.93, HI: 1.42, ID: 0.95, IL: 1.01, IN: 0.88, IA: 0.86, KS: 0.87,
+  KY: 0.86, LA: 0.88, ME: 0.98, MD: 1.10, MA: 1.18, MI: 0.90, MN: 0.98, MS: 0.82,
+  MO: 0.88, MT: 0.98, NE: 0.88, NV: 1.01, NH: 1.05, NJ: 1.15, NM: 0.89, NY: 1.18,
+  NC: 0.92, ND: 0.90, OH: 0.89, OK: 0.85, OR: 1.06, PA: 0.98, RI: 1.05, SC: 0.90,
+  SD: 0.88, TN: 0.91, TX: 0.92, UT: 1.04, VT: 1.02, VA: 1.04, WA: 1.12, WV: 0.82,
+  WI: 0.92, WY: 0.95, default: 1.00,
+}
+
+// Metro-level overrides (more precise than state)
+const RPP_METRO = {
+  phoenix: 1.02, tucson: 0.88, flagstaff: 1.08, prescott: 0.96, mesa: 1.00, tempe: 1.02,
+  houston: 0.89, dallas: 0.95, austin: 1.01, 'san antonio': 0.85, 'fort worth': 0.93,
+  'los angeles': 1.45, 'san francisco': 1.55, 'san diego': 1.35, 'san jose': 1.50, sacramento: 1.15,
+  denver: 1.12, 'colorado springs': 1.02, seattle: 1.20, portland: 1.08, 'las vegas': 1.03,
+  'salt lake city': 1.06, boise: 0.98, reno: 1.05, nashville: 0.96, atlanta: 0.95,
+  charlotte: 0.93, raleigh: 0.96, miami: 1.15, tampa: 0.97, orlando: 0.98, jacksonville: 0.92,
+  chicago: 1.05, minneapolis: 1.02, detroit: 0.88, columbus: 0.90, cleveland: 0.86,
+  pittsburgh: 0.90, philadelphia: 1.05, 'new york': 1.35, boston: 1.22, washington: 1.15,
+  baltimore: 1.05, 'kansas city': 0.90, 'st louis': 0.88, indianapolis: 0.88,
+  'oklahoma city': 0.84, albuquerque: 0.90, 'el paso': 0.82,
+}
+
+const STATE_ABBR = {
+  Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA',
+  Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA',
+  Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA',
+  Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
+  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS',
+  Missouri: 'MO', Montana: 'MT', Nebraska: 'NE', Nevada: 'NV',
+  'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+  'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH', Oklahoma: 'OK',
+  Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT',
+  Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI',
+  Wyoming: 'WY',
+}
 
 const FND_COSTS = {
   CONVENTIONAL_SLAB:   { low: 8,  high: 15 },
@@ -46,12 +84,29 @@ const LAYOUT_PRESETS = {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
-function identifyRegion(lat, lon) {
-  if (lat > 33.2 && lat < 34.0 && lon > -113.0 && lon < -111.5) return 'phoenix'
-  if (lat > 31.7 && lat < 32.5 && lon > -111.3 && lon < -110.5) return 'tucson'
-  if (lat > 35.0 && lat < 35.5 && lon > -111.8 && lon < -111.3) return 'flagstaff'
-  if (lat > 34.3 && lat < 34.8 && lon > -112.8 && lon < -112.2) return 'prescott'
-  return 'default'
+function stateFromDisplayName(displayName) {
+  if (!displayName) return null
+  const parts = displayName.split(',').map(s => s.trim())
+  for (const part of parts) {
+    if (STATE_ABBR[part]) return STATE_ABBR[part]
+  }
+  return null
+}
+
+function metroFromDisplayName(displayName) {
+  if (!displayName) return null
+  const lower = displayName.toLowerCase()
+  for (const metro of Object.keys(RPP_METRO)) {
+    if (lower.includes(metro)) return metro
+  }
+  return null
+}
+
+function getLocalCostFactor(state, metro) {
+  // Metro override first, then state, then national default
+  if (metro && RPP_METRO[metro]) return RPP_METRO[metro]
+  if (state && RPP_STATE[state]) return RPP_STATE[state]
+  return RPP_STATE.default
 }
 
 function clamp(val, min, max) {
@@ -133,9 +188,9 @@ function generateLayouts(bedrooms, bathrooms, stories, quality) {
 
 // ─── COST ESTIMATOR ──────────────────────────────────────────────────────────
 
-function estimateLayoutCost(layout, quality, region, foundationType) {
+function estimateLayoutCost(layout, quality, localCostFactor, foundationType) {
   const rate = QUALITY_RATES[quality] || QUALITY_RATES.mid
-  const mult = REGION_MULT[region] || REGION_MULT.default
+  const mult = localCostFactor || 1.0
   const fnd = FND_COSTS[foundationType] || FND_COSTS.CONVENTIONAL_SLAB
   const fndRate = (fnd.low + fnd.high) / 2
 
@@ -327,7 +382,7 @@ async function geocodeLocation(location) {
     if (!res.ok) return null
     const data = await res.json()
     if (!data || data.length === 0) return null
-    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) }
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), displayName: data[0].display_name || '' }
   } catch {
     return null
   }
@@ -419,11 +474,14 @@ exports.handler = async (event) => {
     const st = clamp(Math.round(stories), 1, 3)
     const qual = QUALITY_RATES[quality] ? quality : 'mid'
 
-    // Geocode location
+    // Geocode location → resolve state + metro for cost factor
     const geo = await geocodeLocation(location)
     const lat = geo ? geo.lat : 33.4484
     const lon = geo ? geo.lon : -112.074
-    const region = identifyRegion(lat, lon)
+    const displayName = geo?.displayName || ''
+    const state = stateFromDisplayName(displayName)
+    const metro = metroFromDisplayName(displayName)
+    const localCostFactor = getLocalCostFactor(state, metro)
 
     // Auto-fetch GIS data if no siteData provided
     if (!siteData) {
@@ -457,7 +515,7 @@ exports.handler = async (event) => {
     const { foundationType, notes: structuralNotes } = structuralScreen(layouts, siteData)
 
     // Cost estimates for each layout
-    const costs = layouts.map(layout => estimateLayoutCost(layout, qual, region, foundationType))
+    const costs = layouts.map(layout => estimateLayoutCost(layout, qual, localCostFactor, foundationType))
 
     // Attach costs to layout objects
     const layoutsWithCosts = layouts.map((layout, i) => ({
@@ -475,7 +533,7 @@ exports.handler = async (event) => {
         status: 'ok',
         data: {
           layouts: layoutsWithCosts,
-          location: { region, lat, lon, query: location },
+          location: { state, metro, localCostFactor, lat, lon, query: location },
           quality: qual,
           foundationType,
           structuralNotes,
