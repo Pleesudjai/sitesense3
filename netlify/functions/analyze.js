@@ -1950,8 +1950,7 @@ async function runParcelStrategist(ep, expertFindings) {
     }
   }
 
-  // Count compound risks across ALL expert reasons
-  const compoundCount = expertFindings.reduce((c, e) => c + (e.reasons || []).filter(r => r.startsWith('COMPOUND')).length, 0)
+  // Reuse compoundCount from weighted verdict above
   if (compoundCount >= 2) {
     tradeoffs.push(`${compoundCount} compound risks detected — these are interactions between multiple site conditions that individual assessments would miss. Professional coordination across disciplines is especially important.`)
   }
