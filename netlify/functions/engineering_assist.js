@@ -625,17 +625,15 @@ exports.handler = async (event) => {
       userContent = `SITE DATA:${gisContext}\n\nQUESTION: ${question.trim()}`
     }
 
-    // ── Call Claude (with timeout to stay within Netlify's 26s limit) ────
+    // ── Call Claude (Haiku for speed — must finish within Netlify 26s) ────
     const client = new Anthropic({ apiKey })
 
-    const claudePromise = client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: SYSTEM_PROMPT,
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      system: 'You are a civil/structural engineering assistant. Answer questions about US building codes (IBC 2021, ASCE 7-22, ACI 318/350/360R). Cite code sections. Return JSON: {"answer":"...","sources":[{"type":"PUBLIC|LICENSED","reference":"...","description":"..."}],"confidence":"HIGH|MEDIUM|LOW","disclaimer":"..."}',
       messages: [{ role: 'user', content: userContent }],
     })
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000))
-    const message = await Promise.race([claudePromise, timeoutPromise])
 
     const rawText = message.content[0].text
 
