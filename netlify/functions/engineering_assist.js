@@ -643,13 +643,25 @@ exports.handler = async (event) => {
     if (cleanText.startsWith('```')) {
       cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
     }
+    // Also strip trailing text after closing brace (Haiku sometimes adds extra)
+    const lastBrace = cleanText.lastIndexOf('}')
+    if (lastBrace > 0 && lastBrace < cleanText.length - 1) {
+      cleanText = cleanText.substring(0, lastBrace + 1)
+    }
     let parsed
     try {
       parsed = JSON.parse(cleanText)
+      // If answer is itself a JSON string, parse it too
+      if (typeof parsed.answer === 'string' && parsed.answer.trim().startsWith('{')) {
+        try {
+          const inner = JSON.parse(parsed.answer.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, ''))
+          if (inner.answer) parsed = inner
+        } catch { /* keep outer */ }
+      }
     } catch {
       // Claude didn't return valid JSON — wrap raw text in expected structure
       parsed = {
-        answer: cleanText,
+        answer: cleanText.replace(/[{}"\[\]]/g, '').replace(/\\n/g, '\n').trim(),
         sources: [],
         confidence: 'MEDIUM',
         disclaimer: FALLBACK_DISCLAIMER,
