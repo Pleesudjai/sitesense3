@@ -108,73 +108,119 @@ function squarify(items, rect) {
 /* ── House layout engine ─────────────────────────────────────────────────── */
 const CORRIDOR_FT = 4
 
-function layoutHouse(rooms, footprintSF, stories) {
-  if (!rooms || rooms.length === 0) return { floors: [], footW: 0, footH: 0 }
+// Determine which facade is "front" (south-facing by default, or from site_design)
+function getFacadeAssignment(siteDesign) {
+  if (!siteDesign) return { front: 'south', best_daylight: 'south', worst: 'west', buffer: 'west' }
+
+  const climate = siteDesign.climate_zone || 'temperate'
+  const orientDeg = siteDesign.orientation_degrees || 180
+
+  // Determine primary facade from orientation (0=N, 90=E, 180=S, 270=W)
+  const primary = orientDeg >= 135 && orientDeg <= 225 ? 'south'
+    : orientDeg >= 45 && orientDeg < 135 ? 'east'
+    : orientDeg >= 225 && orientDeg < 315 ? 'west' : 'north'
+
+  // Climate-based facade assignments
+  const assignments = {
+    hot_arid:  { front: primary, best_daylight: 'south', worst: 'west', buffer: 'west' },
+    hot_humid: { front: primary, best_daylight: 'southeast', worst: 'west', buffer: 'west' },
+    cold:      { front: primary, best_daylight: 'south', worst: 'north', buffer: 'north' },
+    temperate: { front: primary, best_daylight: 'south', worst: 'west', buffer: 'north' },
+  }
+  return assignments[climate] || assignments.temperate
+}
+
+// Re-order rooms based on site_design facade assignments
+function assignRoomsToFacades(rooms, siteDesign) {
+  const facades = getFacadeAssignment(siteDesign)
+  const zoned = rooms.map(r => ({ ...r, zone: getZone(r.name), area: r.targetSF || 100 }))
+
+  // Tag rooms with facade preference based on site_design
+  return zoned.map(r => {
+    if (r.zone === 'social') {
+      // Living/dining on best daylight facade (front/top of plan)
+      return { ...r, facadePriority: 'front' }
+    }
+    if (r.name.includes('Garage') || r.name.includes('Laundry') || r.name === 'Hallway / Circulation') {
+      // Service rooms on worst facade (buffer zone)
+      return { ...r, facadePriority: 'buffer' }
+    }
+    if (r.zone === 'private') {
+      // Bedrooms on quieter/cooler side
+      return { ...r, facadePriority: 'back' }
+    }
+    return { ...r, facadePriority: 'back' }
+  })
+}
+
+function layoutHouse(rooms, footprintSF, stories, siteDesign) {
+  if (!rooms || rooms.length === 0) return { floors: [], footW: 0, footH: 0, facades: null }
   const footW = Math.sqrt(footprintSF * 1.3)
   const footH = footprintSF / footW
+  const facades = getFacadeAssignment(siteDesign)
 
-  // Classify rooms into zones
-  const zoned = rooms.map(r => ({ ...r, zone: getZone(r.name), area: r.targetSF || 100 }))
+  // Classify and assign rooms to facades
+  const assigned = assignRoomsToFacades(rooms, siteDesign)
 
   // Separate by floor
   const byFloor = {}
-  zoned.forEach(r => { const f = r.floor || 1; (byFloor[f] = byFloor[f] || []).push(r) })
+  assigned.forEach(r => { const f = r.floor || 1; (byFloor[f] = byFloor[f] || []).push(r) })
 
   const floors = []
 
   for (const [floorNum, floorRooms] of Object.entries(byFloor)) {
     const fn = parseInt(floorNum)
-    const social = floorRooms.filter(r => r.zone === 'social')
-    const service = floorRooms.filter(r => r.zone === 'service')
-    const priv = floorRooms.filter(r => r.zone === 'private')
 
-    // For 2-story: floor 1 = social+service, floor 2 = private
-    // For 1-story: all zones on same floor
-    const topZone = social.length > 0 ? social : priv
-    const botZone = priv.length > 0 && social.length > 0 ? [...priv, ...service] : service
+    // Front zone = social (best daylight facade)
+    // Back zone = private + service buffer
+    const frontZone = floorRooms.filter(r => r.facadePriority === 'front')
+    const backZone = floorRooms.filter(r => r.facadePriority !== 'front')
 
     const totalArea = floorRooms.reduce((s, r) => s + r.area, 0)
-    const topArea = topZone.reduce((s, r) => s + r.area, 0)
-    const botArea = botZone.reduce((s, r) => s + r.area, 0)
-    const topFrac = topArea / (totalArea || 1)
-    const botFrac = botArea / (totalArea || 1)
+    const frontArea = frontZone.reduce((s, r) => s + r.area, 0)
+    const backArea = backZone.reduce((s, r) => s + r.area, 0)
+    const frontFrac = frontArea / (totalArea || 1)
+    const backFrac = backArea / (totalArea || 1)
 
     const corridorH = CORRIDOR_FT
     const usableH = footH - corridorH
-    const topH = usableH * (topFrac / (topFrac + botFrac || 1))
-    const botH = usableH - topH
+    const frontH = usableH * (frontFrac / (frontFrac + backFrac || 1))
+    const backH = usableH - frontH
 
     const rects = []
-    // Top zone (social, front of house)
-    if (topZone.length > 0) {
-      const treemapItems = topZone.map(r => ({ name: r.name, area: r.area, zone: r.zone }))
-      const placed = squarify(treemapItems, { x: 0, y: 0, w: footW, h: topH })
+
+    // Front zone (social — best daylight, top of SVG = south-facing facade)
+    if (frontZone.length > 0) {
+      const treemapItems = frontZone.map(r => ({ name: r.name, area: r.area, zone: r.zone }))
+      const placed = squarify(treemapItems, { x: 0, y: 0, w: footW, h: frontH })
       rects.push(...placed)
     }
 
     // Corridor
-    const corridorY = topH
+    const corridorY = frontH
     rects.push({ name: 'Corridor', area: footW * corridorH, zone: 'corridor', x: 0, y: corridorY, w: footW, h: corridorH })
 
-    // Bottom zone (private, back of house)
-    if (botZone.length > 0) {
-      const treemapItems = botZone.map(r => ({ name: r.name, area: r.area, zone: r.zone }))
-      const placed = squarify(treemapItems, { x: 0, y: corridorY + corridorH, w: footW, h: botH })
+    // Back zone (private + service buffer)
+    if (backZone.length > 0) {
+      const treemapItems = backZone.map(r => ({ name: r.name, area: r.area, zone: r.zone }))
+      const placed = squarify(treemapItems, { x: 0, y: corridorY + corridorH, w: footW, h: backH })
       rects.push(...placed)
     }
 
     floors.push({ floor: fn, rects, width: footW, height: footH })
   }
 
-  return { floors, footW, footH }
+  return { floors, footW, footH, facades }
 }
 
 /* ── 2D SVG Floor Plan ───────────────────────────────────────────────────── */
-function FloorPlan2D({ layout }) {
+function FloorPlan2D({ layout, siteDesign }) {
   const rooms = layout?.rooms || []
   const footprintSF = layout?.footprintSF || layout?.totalSF || 1200
   const stories = layout?.stories || 1
-  const { floors, footW, footH } = layoutHouse(rooms, footprintSF, stories)
+  const { floors, footW, footH, facades } = layoutHouse(rooms, footprintSF, stories, siteDesign)
+  const orientDeg = siteDesign?.orientation_degrees || 180
+  const rotOffset = orientDeg - 180  // SVG rotation: 0 = south-facing (default)
   const [zoom, setZoom] = useState(1.0)
   if (floors.length === 0) return null
 
@@ -334,6 +380,30 @@ function FloorPlan2D({ layout }) {
                 <text x={SCALE_BAR / 2} y={-1.5} textAnchor="middle" fill="#9ca3af" fontSize={1.8}>
                   {SCALE_BAR} ft</text>
               </g>
+
+              {/* Facade labels from site_design */}
+              {siteDesign && (
+                <g>
+                  {/* Top edge = front facade (best daylight) */}
+                  <text x={ox + fw / 2} y={oy - 2} textAnchor="middle" fill="#fbbf24" fontSize={1.6} fontWeight="600">
+                    {facades?.best_daylight?.toUpperCase() || 'S'} facade — best daylight
+                  </text>
+                  {/* Bottom edge (entry side) */}
+                  <text x={ox + fw / 2} y={oy + fh + PORCH_H + 6} textAnchor="middle" fill="#02C39A" fontSize={1.4}>
+                    ENTRY · {facades?.front?.toUpperCase() || 'S'}
+                  </text>
+                  {/* Left edge */}
+                  <text x={ox - 2} y={oy + fh / 2} textAnchor="end" fill={facades?.worst === 'west' ? '#ef4444' : '#6b7280'} fontSize={1.3}
+                    transform={`rotate(-90, ${ox - 2}, ${oy + fh / 2})`}>
+                    {facades?.worst === 'west' ? 'W — minimize glazing' : 'W'}
+                  </text>
+                  {/* Right edge */}
+                  <text x={ox + fw + 2} y={oy + fh / 2} textAnchor="start" fill="#6b7280" fontSize={1.3}
+                    transform={`rotate(90, ${ox + fw + 2}, ${oy + fh / 2})`}>
+                    E
+                  </text>
+                </g>
+              )}
             </svg>
           </div>
         )
@@ -344,15 +414,16 @@ function FloorPlan2D({ layout }) {
 }
 
 /* ── 3D Box Model (Canvas) ───────────────────────────────────────────────── */
-function FloorPlan3D({ layout }) {
+function FloorPlan3D({ layout, siteDesign }) {
   const canvasRef = useRef(null)
-  const [rotation, setRotation] = useState({ x: 30, y: -35 })
+  const orientYaw = siteDesign?.orientation_degrees ? -(siteDesign.orientation_degrees - 180) : -35
+  const [rotation, setRotation] = useState({ x: 30, y: orientYaw })
   const [zoom3d, setZoom3d] = useState(1.0)
   const dragRef = useRef({ active: false, lastX: 0, lastY: 0 })
 
   const rooms = layout?.rooms || []
   const footprintSF = layout?.footprintSF || layout?.totalSF || 1200
-  const { floors, footW, footH } = layoutHouse(rooms, footprintSF, layout?.stories || 1)
+  const { floors, footW, footH } = layoutHouse(rooms, footprintSF, layout?.stories || 1, siteDesign)
 
   // Flatten all rects with floor info
   const allRects = []
@@ -522,7 +593,7 @@ function FloorPlan3D({ layout }) {
 }
 
 /* ── Main Export ──────────────────────────────────────────────────────────── */
-export default function FloorPlanView({ layout, onSelectLayout }) {
+export default function FloorPlanView({ layout, siteDesign, onSelectLayout }) {
   const [view, setView] = useState('2d')
 
   if (!layout?.rooms || !Array.isArray(layout.rooms) || layout.rooms.length === 0) return null
@@ -530,7 +601,10 @@ export default function FloorPlanView({ layout, onSelectLayout }) {
   return (
     <div className="bg-gray-800 rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold text-gray-400">Floor Plan — {layout.name}</h3>
+        <h3 className="text-xs font-semibold text-gray-400">
+          Floor Plan — {layout.name}
+          {siteDesign && <span className="text-teal ml-2">· site-responsive</span>}
+        </h3>
         <div className="flex gap-1">
           <button onClick={() => setView('2d')}
             className={`text-xs px-2 py-0.5 rounded ${view === '2d' ? 'bg-teal-800 text-teal-200' : 'bg-gray-700 text-gray-400'}`}>
@@ -542,8 +616,8 @@ export default function FloorPlanView({ layout, onSelectLayout }) {
           </button>
         </div>
       </div>
-      {view === '2d' && <FloorPlan2D layout={layout} />}
-      {view === '3d' && <FloorPlan3D layout={layout} />}
+      {view === '2d' && <FloorPlan2D layout={layout} siteDesign={siteDesign} />}
+      {view === '3d' && <FloorPlan3D layout={layout} siteDesign={siteDesign} />}
     </div>
   )
 }

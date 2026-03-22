@@ -150,7 +150,7 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
 
           {/* Floor plan — always show Standard layout */}
           {stdLayout && (
-            <FloorPlanView layout={stdLayout} />
+            <FloorPlanView layout={stdLayout} siteDesign={siteData?.ai_report?.site_design} />
           )}
 
           {/* Structural notes */}
