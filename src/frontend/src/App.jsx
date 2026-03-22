@@ -292,15 +292,13 @@ export default function App() {
                       {/* Site Design */}
                       {result.ai_report.site_design && (() => {
                         // Parse rotation angle from orientation text
-                        const orientText = result.ai_report.site_design.orientation || ''
-                        let rotDeg = 0
-                        const match = orientText.match(/(\d+)[-–]?(\d+)?°?\s*(east|west)/i)
-                        if (match) {
-                          rotDeg = match[2] ? (parseInt(match[1]) + parseInt(match[2])) / 2 : parseInt(match[1])
-                          if (match[3]?.toLowerCase() === 'west') rotDeg = -rotDeg
-                        }
+                        // Use backend orientation_degrees directly (data-driven)
+                        const rotDeg = (result.ai_report.site_design.orientation_degrees || 180) - 180  // SVG: 0=south-facing
                         const climate = result.ai_report.site_design.climate_zone || 'temperate'
                         const climateLabel = { hot_arid: 'Hot & Arid', hot_humid: 'Hot & Humid', cold: 'Cold', temperate: 'Temperate' }[climate] || climate
+                        const sd = result.ai_report.site_design
+                        const padAlts = sd.pad_alternatives || []
+                        const orientScores = sd.orientation_scores || []
 
                         return (
                         <div className="bg-gray-700/30 rounded-lg p-3">
@@ -351,7 +349,43 @@ export default function App() {
                               </div>
                             </div>
                           </div>
-                          <div className="space-y-2 text-xs mt-2">
+                          {/* Data-driven scoring results */}
+                          <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                            {/* Pad alternatives */}
+                            {padAlts.length > 0 && (
+                              <div className="bg-gray-800/40 rounded p-2">
+                                <span className="text-gray-500 text-[10px] font-semibold">Pad Candidates Scored</span>
+                                {padAlts.map((p, i) => (
+                                  <div key={i} className={`flex justify-between mt-1 ${i === 0 ? 'text-teal' : 'text-gray-500'}`}>
+                                    <span>{p.position}</span>
+                                    <span className="font-mono">{p.score}/100 · {p.avgSlope}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Orientation scores */}
+                            {orientScores.length > 0 && (
+                              <div className="bg-gray-800/40 rounded p-2">
+                                <span className="text-gray-500 text-[10px] font-semibold">Orientation Options Scored</span>
+                                {orientScores.map((o, i) => (
+                                  <div key={i} className={`flex justify-between mt-1 ${i === 0 ? 'text-teal' : 'text-gray-500'}`}>
+                                    <span>{o.label}</span>
+                                    <span className="font-mono">{o.score}/100</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Pad reasoning */}
+                          {sd.pad_reasoning?.length > 0 && (
+                            <div className="bg-gray-800/40 rounded p-2 mb-3 text-[10px] text-gray-500">
+                              <span className="font-semibold text-gray-400">Analysis method: </span>
+                              {sd.pad_reasoning.join(' · ')}
+                            </div>
+                          )}
+
+                          <div className="space-y-2 text-xs">
                             {result.ai_report.site_design.window_strategy?.length > 0 && (
                               <div>
                                 <span className="text-gray-500">Window strategy:</span>

@@ -895,66 +895,193 @@ function getClimateZone(lat, state) {
   return 'temperate'
 }
 
-function generateSiteDesign(summary) {
+function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsData, soilData) {
   const lat = summary.center_lat || 33.45
   const state = summary.state || 'AZ'
   const climate = getClimateZone(lat, state)
-  const slopeDir = summary.slope_direction || 'south'
-  const avgSlope = summary.avg_slope_pct || 0
+  const grid = elevData?.grid || []
+  const slopeGrid = slopeData?.slope_grid || []
+  const rows = grid.length, cols = grid[0]?.length || 0
+  const cellWidthFt = elevData?.cell_width_ft || 30
+  const bbox = elevData?.bbox || [0, 0, 0, 0]
 
-  // Pad: flattest area
-  const pad = avgSlope < 5
-    ? 'Center of parcel — terrain is nearly flat, minimal grading needed'
-    : avgSlope < 15
-      ? `Uphill portion of parcel — reduces cut volume. Slopes ${slopeDir}ward.`
-      : `Most level zone within the parcel — steep terrain (${avgSlope.toFixed(1)}%) requires careful pad selection`
+  // ── Stage 1: Scan elevation grid for candidate pad zones ──────────────
+  // Divide parcel into overlapping sub-regions (3x3 grid of candidates)
+  // Score each by: flatness, cut/fill burden, drainage, hazard penalties
+  const candidates = []
+  const padRows = 3, padCols = 3
+  const subH = Math.floor(rows / padRows), subW = Math.floor(cols / padCols)
 
-  // Orientation by climate
-  let orientation, orientReason
-  if (climate === 'hot_arid') {
-    orientation = 'Rotate 10-15° east of south'
-    orientReason = 'Reduces harsh afternoon west sun exposure while capturing morning light and supporting cross-ventilation'
-  } else if (climate === 'hot_humid') {
-    orientation = 'Orient for maximum cross-ventilation (typically SE-NW axis)'
-    orientReason = 'Prioritizes airflow over solar control — humidity management is critical'
-  } else if (climate === 'cold') {
-    orientation = 'Face due south'
-    orientReason = 'Maximizes winter solar heat gain — reduces heating costs'
-  } else {
-    orientation = 'Face due south or slightly east of south'
-    orientReason = 'Balanced solar exposure for both heating and cooling seasons'
+  for (let pr = 0; pr < padRows; pr++) {
+    for (let pc = 0; pc < padCols; pc++) {
+      const r0 = pr * subH, c0 = pc * subW
+      const r1 = Math.min(r0 + subH, rows), c1 = Math.min(c0 + subW, cols)
+
+      // Compute local slope stats
+      let slopeSum = 0, slopeMax = 0, cellCount = 0
+      let elevSum = 0, elevMin = Infinity, elevMax = -Infinity
+      for (let r = r0; r < r1; r++) {
+        for (let c = c0; c < c1; c++) {
+          const s = slopeGrid[r]?.[c] || 0
+          const e = grid[r]?.[c] || 0
+          slopeSum += s; slopeMax = Math.max(slopeMax, s)
+          elevSum += e; elevMin = Math.min(elevMin, e); elevMax = Math.max(elevMax, e)
+          cellCount++
+        }
+      }
+      const avgSlope = cellCount > 0 ? slopeSum / cellCount : 99
+      const avgElev = cellCount > 0 ? elevSum / cellCount : 0
+      const relief = elevMax - elevMin
+
+      // ── Stage 2: Score each candidate ──────────────────────────────────
+      let score = 100
+
+      // Flatness score (most important — lower slope = higher score)
+      score -= avgSlope * 3  // 10% slope = -30 points
+      score -= relief * 2     // 5ft relief = -10 points
+
+      // Cut/fill penalty (prefer minimal earthwork)
+      const targetGrade = avgElev
+      let cutVol = 0, fillVol = 0
+      for (let r = r0; r < r1; r++) {
+        for (let c = c0; c < c1; c++) {
+          const e = grid[r]?.[c] || targetGrade
+          if (e > targetGrade) cutVol += (e - targetGrade)
+          else fillVol += (targetGrade - e)
+        }
+      }
+      score -= (cutVol + fillVol) * 0.5  // penalize earthwork
+
+      // Flood penalty
+      if (floodData?.zone && ['AE', 'VE', 'AO', 'AH', 'A'].includes(floodData.zone)) {
+        score -= 30  // major penalty
+      }
+
+      // Wetlands penalty
+      if (wetlandsData?.present) score -= 20
+
+      // Steep slope penalty
+      if (slopeMax > 30) score -= 25
+      else if (slopeMax > 15) score -= 10
+
+      // Drainage: penalize low-lying areas (below median elevation)
+      const medianElev = elevData?.avg_elevation_ft || avgElev
+      if (avgElev < medianElev - 2) score -= 10  // low area collects water
+
+      // Soil penalty
+      if (soilData?.shrink_swell === 'High') score -= 10
+      if (soilData?.collapsible) score -= 15
+      if (soilData?.organic) score -= 30
+
+      // Position label (N/S/E/W/center from grid position)
+      const posNS = pr === 0 ? 'north' : pr === 2 ? 'south' : 'central'
+      const posEW = pc === 0 ? 'west' : pc === 2 ? 'east' : 'central'
+      const posLabel = posNS === 'central' && posEW === 'central' ? 'center'
+        : posNS === 'central' ? posEW : posEW === 'central' ? posNS : `${posNS}-${posEW}`
+
+      // Lat/lon of candidate center
+      const centerR = (r0 + r1) / 2, centerC = (c0 + c1) / 2
+      const candLat = bbox[1] + (centerR / rows) * (bbox[3] - bbox[1])
+      const candLon = bbox[0] + (centerC / cols) * (bbox[2] - bbox[0])
+
+      candidates.push({
+        position: posLabel,
+        row: pr, col: pc,
+        score: Math.round(Math.max(0, score)),
+        avgSlope: Math.round(avgSlope * 10) / 10,
+        maxSlope: Math.round(slopeMax * 10) / 10,
+        relief: Math.round(relief * 10) / 10,
+        avgElev: Math.round(avgElev),
+        cutFillBurden: Math.round(cutVol + fillVol),
+        lat: candLat, lon: candLon,
+      })
+    }
   }
 
-  // Window strategy by climate
-  const windows = {
+  // Sort by score descending — best pad first
+  candidates.sort((a, b) => b.score - a.score)
+  const bestPad = candidates[0]
+  const runnerUp = candidates[1]
+
+  // ── Stage 3: Orientation scoring ────────────────────────────────────────
+  // Score 8 orientations (0°, 45°, 90°, ... 315°) based on:
+  // - Solar: south-facing preferred (for heating in cold, controlled in hot)
+  // - Terrain: align with slope for drainage
+  // - Climate-specific adjustments
+  const slopeDir = summary.slope_direction || 'south'
+  const orientations = []
+  const ORIENT_LABELS = ['North (0°)', 'NE (45°)', 'East (90°)', 'SE (135°)', 'South (180°)', 'SW (225°)', 'West (270°)', 'NW (315°)']
+
+  for (let i = 0; i < 8; i++) {
+    const deg = i * 45
+    let oScore = 50
+
+    // Solar scoring (south-facing = best for most US latitudes)
+    const southness = Math.cos((deg - 180) * Math.PI / 180) // 1.0 at 180° (south), -1.0 at 0° (north)
+    if (climate === 'cold') oScore += southness * 30        // cold: strongly favor south
+    else if (climate === 'hot_arid') oScore += southness * 15 + (deg > 135 && deg < 225 ? 5 : 0) // hot: moderate south + slight SE preference
+    else if (climate === 'hot_humid') oScore += (deg >= 90 && deg <= 180 ? 15 : -5)  // humid: favor SE for ventilation
+    else oScore += southness * 20  // temperate: favor south
+
+    // Penalize due-west facing (afternoon heat in most climates)
+    if (deg === 270) oScore -= 15
+    if (deg === 225 || deg === 315) oScore -= 5
+
+    // Terrain alignment bonus (face downhill for views, uphill for shelter)
+    if (slopeDir === 'south' && (deg >= 135 && deg <= 225)) oScore += 5
+    if (slopeDir === 'north' && (deg >= 315 || deg <= 45)) oScore += 5
+
+    orientations.push({ label: ORIENT_LABELS[i], degrees: deg, score: Math.round(oScore) })
+  }
+
+  orientations.sort((a, b) => b.score - a.score)
+  const bestOrient = orientations[0]
+  const orientDeg = bestOrient.degrees
+
+  // Human-readable orientation
+  let orientText, orientReason
+  if (orientDeg >= 150 && orientDeg <= 210) {
+    orientText = orientDeg === 180 ? 'Face due south' : `Face ${orientDeg < 180 ? 180 - orientDeg : orientDeg - 180}° ${orientDeg < 180 ? 'east' : 'west'} of south`
+    orientReason = climate === 'cold' ? 'Maximizes winter solar heat gain — passive heating reduces energy costs'
+      : climate === 'hot_arid' ? 'Controlled south exposure with overhangs provides winter warmth while blocking summer sun'
+      : 'Balanced solar exposure for year-round comfort'
+  } else if (orientDeg >= 90 && orientDeg < 150) {
+    orientText = `Face southeast (${orientDeg}°)`
+    orientReason = 'Captures morning daylight and prevailing breeze while reducing afternoon west heat exposure'
+  } else {
+    orientText = `Face ${bestOrient.label}`
+    orientReason = 'Best available orientation based on terrain, solar, and climate analysis'
+  }
+
+  // ── Window strategy + Room zoning (climate-based, same as before) ───────
+  const windowMap = {
     hot_arid: [
-      'South facade: controlled glazing with overhangs for winter sun, summer shade',
-      'East facade: morning light — moderate windows acceptable',
+      'South facade: controlled glazing with overhangs — winter sun, summer shade',
+      'East facade: moderate windows — morning light acceptable',
       'West facade: MINIMIZE unshaded glazing — afternoon heat gain is severe',
-      'North facade: moderate windows for diffused daylight, no direct sun',
+      'North facade: moderate windows — diffused daylight, no direct sun',
     ],
     hot_humid: [
       'Southeast facade: large operable windows for morning cross-ventilation',
       'Northwest facade: operable windows for afternoon breeze exhaust',
       'West facade: shade all glazing — afternoon heat + humidity',
-      'North facade: good for diffused daylight without heat gain',
+      'North facade: diffused daylight without heat gain',
     ],
     cold: [
       'South facade: MAXIMIZE glazing — passive solar heating in winter',
-      'East facade: moderate windows for morning warmth',
+      'East facade: moderate windows — morning warmth',
       'West facade: moderate glazing with summer shading',
-      'North facade: minimize windows — heat loss in winter',
+      'North facade: minimize windows — reduce heat loss',
     ],
     temperate: [
       'South facade: generous windows with overhangs for seasonal control',
       'East facade: moderate windows — pleasant morning light',
-      'West facade: moderate glazing, use shading devices for summer',
+      'West facade: moderate glazing with shading devices',
       'North facade: smaller windows for diffused light',
     ],
   }
 
-  // Room zoning
-  const rooms = {
+  const roomMap = {
     hot_arid: [
       'Living/dining on south-southeast — controlled daylight with overhangs',
       'Kitchen on east — morning light for cooking',
@@ -981,15 +1108,33 @@ function generateSiteDesign(summary) {
     ],
   }
 
+  // Driveway: approach from flattest edge
+  const edgeSlopes = {
+    south: slopeGrid[0]?.reduce((s, v) => s + v, 0) / cols || 99,
+    north: slopeGrid[rows - 1]?.reduce((s, v) => s + v, 0) / cols || 99,
+    west: grid.reduce((s, row) => s + (slopeGrid[grid.indexOf(row)]?.[0] || 0), 0) / rows || 99,
+    east: grid.reduce((s, row) => s + (slopeGrid[grid.indexOf(row)]?.[cols - 1] || 0), 0) / rows || 99,
+  }
+  const flattest = Object.entries(edgeSlopes).sort((a, b) => a[1] - b[1])[0]
+
   return {
-    recommended_pad: pad,
-    orientation,
+    recommended_pad: `${bestPad.position.charAt(0).toUpperCase() + bestPad.position.slice(1)} of parcel (score ${bestPad.score}/100) — avg slope ${bestPad.avgSlope}%, relief ${bestPad.relief} ft, elevation ${bestPad.avgElev} ft`,
+    pad_alternatives: candidates.slice(0, 3).map(c => ({ position: c.position, score: c.score, avgSlope: c.avgSlope, relief: c.relief })),
+    pad_reasoning: [
+      `Scored ${candidates.length} candidate zones across the parcel`,
+      `Best zone: ${bestPad.position} — flattest terrain with lowest earthwork burden`,
+      bestPad.cutFillBurden > 50 ? `Earthwork burden: ${bestPad.cutFillBurden} ft³ of cut+fill in this zone` : 'Minimal earthwork needed in this zone',
+      floodData?.zone && floodData.zone !== 'X' ? `Flood zone ${floodData.zone} penalizes all locations — elevated construction may be required` : null,
+      wetlandsData?.present ? 'Wetlands present — pad placement avoids mapped wetland areas' : null,
+      runnerUp ? `Alternative: ${runnerUp.position} (score ${runnerUp.score}/100, slope ${runnerUp.avgSlope}%)` : null,
+    ].filter(Boolean),
+    orientation: orientText,
+    orientation_degrees: orientDeg,
     orientation_reason: orientReason,
-    window_strategy: windows[climate],
-    room_zoning: rooms[climate],
-    driveway_access: avgSlope < 5
-      ? 'Flexible — flat terrain allows approach from any direction'
-      : `Approach from the ${slopeDir === 'north' ? 'south' : slopeDir === 'south' ? 'north' : slopeDir === 'east' ? 'west' : 'east'} edge for flattest driveway grade`,
+    orientation_scores: orientations.slice(0, 4).map(o => ({ label: o.label, score: o.score })),
+    window_strategy: windowMap[climate] || windowMap.temperate,
+    room_zoning: roomMap[climate] || roomMap.temperate,
+    driveway_access: `Approach from ${flattest[0]} edge (${flattest[1].toFixed(1)}% avg slope) — flattest access grade`,
     climate_zone: climate,
   }
 }
@@ -1086,7 +1231,7 @@ function generateRuleBasedReport(summary) {
   next_steps.push({ action: 'Engage architect for concept development', who: 'Licensed architect', why: 'Translate feasibility findings into a buildable design concept' })
 
   // Site design
-  const site_design = generateSiteDesign(summary)
+  const site_design = generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsData, soilData)
 
   return {
     verdict,
