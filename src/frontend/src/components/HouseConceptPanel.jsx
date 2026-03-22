@@ -20,19 +20,16 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
   const [bathrooms, setBathrooms]   = useState(2)
   const [stories, setStories]       = useState(1)
   const [quality, setQuality]       = useState('mid')
-  const [useSiteData, setUseSiteData] = useState(false)
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState(null)
-  const [selectedIdx, setSelectedIdx] = useState(null)
-
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
       const params = { bedrooms, bathrooms, stories, location: address || 'Phoenix, AZ', quality }
-      if (useSiteData && siteData) {
+      if (siteData) {
         params.siteData = {
           soil: siteData.soil,
           foundation: siteData.foundation,
@@ -42,9 +39,6 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
       const res = await estimateHouseConcept(params)
       setResult(res.data)
       onResult?.(res.data)
-      // Auto-select recommended layout
-      const bestIdx = res.data.layouts?.reduce((bi, l, i, arr) => l.score >= arr[bi].score ? i : bi, 0) ?? 0
-      setSelectedIdx(bestIdx)
     } catch (err) {
       setError(err.message || 'House concept generation failed')
     } finally {
@@ -120,19 +114,6 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
           </div>
         </div>
 
-        {/* Site data toggle */}
-        {siteData && (
-          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={useSiteData}
-              onChange={e => setUseSiteData(e.target.checked)}
-              className="accent-teal-500"
-            />
-            Use site analysis data (soil, foundation, loads)
-          </label>
-        )}
-
         <button
           type="submit"
           disabled={loading || !parcelReady}
@@ -150,64 +131,26 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
       )}
 
       {/* ─── Results ─── */}
-      {result && (
+      {result && (() => {
+        const stdLayout = result.layouts?.find(l => l.score === 85) || result.layouts?.[1] || result.layouts?.[0]
+        const costLow = stdLayout?.cost?.range?.low ?? 0
+        const costHigh = stdLayout?.cost?.range?.high ?? 0
+        const totalSF = stdLayout?.totalSF || stdLayout?.total_sf || 0
+        const structSys = stdLayout?.structuralSystem || 'Wood frame'
+        return (
         <div className="space-y-4">
-          {/* Layout cards */}
-          {result.layouts && (
-            <>
-              <h3 className="text-xs font-semibold text-gray-400">Layout Options</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {result.layouts.map((layout, i) => {
-                  const isBest = result.layouts.every(l => layout.score >= l.score)
-                  const isSelected = selectedIdx === i
-                  const costLow = layout.cost?.range?.low ?? 0
-                  const costHigh = layout.cost?.range?.high ?? 0
-                  const roomList = Array.isArray(layout.rooms)
-                    ? layout.rooms.map(r => r.name || r).join(', ')
-                    : layout.rooms || ''
-                  return (
-                    <div
-                      key={i}
-                      onClick={() => setSelectedIdx(i)}
-                      className={`bg-gray-800 rounded-lg p-3 space-y-2 border cursor-pointer transition-all hover:border-teal-400 ${
-                        isSelected ? 'border-teal-500 ring-1 ring-teal-500/30' : 'border-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-white">{layout.name}</span>
-                        {isBest && (
-                          <span className="text-xs bg-teal-900/60 text-teal-300 border border-teal-700 rounded px-1.5 py-0.5">
-                            Recommended
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {(layout.totalSF || layout.total_sf || 0).toLocaleString()} SF
-                        {layout.cost?.costPerSF ? ` · $${layout.cost.costPerSF}/SF` : ''}
-                      </div>
-                      <div className="text-sm font-semibold text-teal">
-                        ${costLow.toLocaleString()} &ndash; ${costHigh.toLocaleString()}
-                      </div>
-                      {roomList && (
-                        <p className="text-xs text-gray-500 leading-tight">{roomList}</p>
-                      )}
-                      {layout.structuralSystem && (
-                        <p className="text-xs text-gray-500 italic">{layout.structuralSystem}</p>
-                      )}
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-gray-500">Score</span>
-                        <span className="text-xs font-bold text-white">{layout.score}/100</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
+          {/* Layout summary line */}
+          {stdLayout && (
+            <div className="bg-gray-800 rounded-lg px-4 py-3">
+              <p className="text-sm text-white font-semibold">
+                Standard Layout · {totalSF.toLocaleString()} SF · Total Construction Cost (building + foundation): ${costLow.toLocaleString()} &ndash; ${costHigh.toLocaleString()} · {structSys}
+              </p>
+            </div>
           )}
 
-          {/* Floor plan for selected layout (click a card above to switch) */}
-          {result.layouts && selectedIdx != null && result.layouts[selectedIdx] && (
-            <FloorPlanView layout={result.layouts[selectedIdx]} />
+          {/* Floor plan — always show Standard layout */}
+          {stdLayout && (
+            <FloorPlanView layout={stdLayout} />
           )}
 
           {/* Structural notes */}
@@ -217,32 +160,6 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
               <ul className="text-xs text-gray-400 list-disc list-inside space-y-0.5">
                 {result.structuralNotes.map((note, i) => <li key={i}>{note}</li>)}
               </ul>
-            </div>
-          )}
-
-          {/* Cost comparison bar */}
-          {result.layouts && (
-            <div className="space-y-1">
-              <h3 className="text-xs font-semibold text-gray-400">Cost Comparison</h3>
-              {result.layouts.map((layout, i) => {
-                const costHigh = layout.cost?.range?.high ?? 0
-                const maxCost = Math.max(...result.layouts.map(l => l.cost?.range?.high ?? 0))
-                const pct = maxCost > 0 ? (costHigh / maxCost) * 100 : 0
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 w-20 shrink-0">{layout.name}</span>
-                    <div className="flex-1 bg-gray-800 rounded h-4 overflow-hidden">
-                      <div
-                        className="bg-teal-600 h-full rounded transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-400 w-20 text-right">
-                      ${(costHigh / 1000).toFixed(0)}k
-                    </span>
-                  </div>
-                )
-              })}
             </div>
           )}
 
@@ -256,9 +173,17 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
             </div>
           )}
 
+          {/* Cost scope note */}
+          <div className="bg-blue-950/30 border border-blue-800/40 rounded-lg p-3">
+            <p className="text-xs text-blue-300">
+              This estimate includes building construction, materials, labor, and foundation. Site preparation costs (earthwork, grading, utilities) are shown separately in the Site Analysis tab.
+            </p>
+          </div>
+
           <ProfessionalDisclaimer />
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

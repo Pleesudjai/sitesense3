@@ -18,7 +18,10 @@ export default function CostTable({ costs }) {
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 space-y-4">
-      <h2 className="font-bold text-sm text-teal">Cost Estimate (Site Prep Only)</h2>
+      <h2 className="font-bold text-sm text-teal">Site Preparation Costs</h2>
+      <p className="text-xs text-gray-500 -mt-2">
+        Earthwork, grading, foundation, and utility connection costs only. Does not include building construction.
+      </p>
 
       {/* Breakdown */}
       <table className="w-full text-xs">

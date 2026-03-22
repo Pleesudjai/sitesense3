@@ -175,13 +175,32 @@ function FloorPlan2D({ layout }) {
   const footprintSF = layout?.footprintSF || layout?.totalSF || 1200
   const stories = layout?.stories || 1
   const { floors, footW, footH } = layoutHouse(rooms, footprintSF, stories)
+  const [zoom, setZoom] = useState(1.0)
   if (floors.length === 0) return null
 
   const WALL_EXT = 3, WALL_INT = 1.5, DOOR_GAP = 2.5
   const PORCH_W = 6, PORCH_H = 4, PAD = 12, SCALE_BAR = 10
 
+  const zoomIn = () => setZoom(z => Math.min(3.0, z + 0.25))
+  const zoomOut = () => setZoom(z => Math.max(0.5, z - 0.25))
+  const handleWheel = (e) => {
+    e.preventDefault()
+    if (e.deltaY < 0) zoomIn()
+    else zoomOut()
+  }
+
   return (
-    <div className={`grid gap-3 ${floors.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+    <div className="relative">
+      {/* Zoom controls */}
+      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+        <button onClick={zoomIn}
+          className="w-7 h-7 bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold rounded flex items-center justify-center">+</button>
+        <button onClick={zoomOut}
+          className="w-7 h-7 bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold rounded flex items-center justify-center">&minus;</button>
+      </div>
+    <div className={`grid gap-3 ${floors.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}
+      style={{ overflow: 'hidden' }}
+      onWheel={handleWheel}>
       {floors.map(({ floor, rects, width: fw, height: fh }) => {
         const svgW = fw + PAD * 2
         const svgH = fh + PAD * 2 + PORCH_H + 4
@@ -198,7 +217,7 @@ function FloorPlan2D({ layout }) {
             <p className="text-xs text-gray-400 mb-1 text-center font-semibold tracking-wide">
               Floor {floor}{floor === 1 && floors.length === 1 ? '' : floor === 1 ? ' — Social' : ' — Private'}
             </p>
-            <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ maxHeight: 340 }}>
+            <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full" style={{ maxHeight: 340, transform: `scale(${zoom})`, transformOrigin: 'center' }}>
               {/* Floor background */}
               <rect x={ox} y={oy} width={fw} height={fh} fill="#0c1220" rx="1" />
 
@@ -316,6 +335,7 @@ function FloorPlan2D({ layout }) {
           </div>
         )
       })}
+    </div>
     </div>
   )
 }

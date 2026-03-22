@@ -544,7 +544,7 @@ exports.handler = async (event) => {
             flood: siteData.floodZone,
             autoFetched: !!siteData._autoFetched,
           } : null,
-          disclaimer: 'This is a preliminary concept estimate only. Actual costs require a licensed contractor bid, site-specific geotechnical report, and architectural plans. Costs are in 2024 USD and projected using 4.5% annual ENR CCI inflation.',
+          disclaimer: 'This is a preliminary concept estimate only. Actual costs require a licensed contractor bid, site-specific geotechnical report, and architectural plans. Costs are in 2024 USD and projected using 4.5% annual ENR CCI inflation. Site preparation costs (earthwork, grading, utilities) are estimated separately in the Site Analysis.',
         },
       }),
     }
