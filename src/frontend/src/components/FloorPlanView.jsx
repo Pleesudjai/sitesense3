@@ -109,25 +109,47 @@ function squarify(items, rect) {
 const CORRIDOR_FT = 4
 
 // Determine which facade is "front" (south-facing by default, or from site_design)
+// Map orientation degrees to compass labels for each SVG edge
+// SVG layout: top=front facade (building faces this way), bottom=back, left=left side, right=right side
+function getEdgeLabels(orientDeg) {
+  // orientDeg = compass direction the building faces (0=N, 90=E, 180=S, 270=W)
+  const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  const idx = Math.round(((orientDeg % 360) / 45)) % 8
+  const front = DIRS[idx]                    // top edge of SVG = direction building faces
+  const back = DIRS[(idx + 4) % 8]           // bottom edge = opposite
+  const right = DIRS[(idx + 2) % 8]          // right edge = 90° clockwise
+  const left = DIRS[(idx + 6) % 8]           // left edge = 90° counter-clockwise
+  return { front, back, left, right }
+}
+
 function getFacadeAssignment(siteDesign) {
-  if (!siteDesign) return { front: 'south', best_daylight: 'south', worst: 'west', buffer: 'west' }
+  if (!siteDesign) return { front: 'S', best_daylight: 'S', worst: 'W', buffer: 'W', edges: getEdgeLabels(180) }
 
   const climate = siteDesign.climate_zone || 'temperate'
   const orientDeg = siteDesign.orientation_degrees || 180
+  const edges = getEdgeLabels(orientDeg)
 
-  // Determine primary facade from orientation (0=N, 90=E, 180=S, 270=W)
-  const primary = orientDeg >= 135 && orientDeg <= 225 ? 'south'
-    : orientDeg >= 45 && orientDeg < 135 ? 'east'
-    : orientDeg >= 225 && orientDeg < 315 ? 'west' : 'north'
-
-  // Climate-based facade assignments
-  const assignments = {
-    hot_arid:  { front: primary, best_daylight: 'south', worst: 'west', buffer: 'west' },
-    hot_humid: { front: primary, best_daylight: 'southeast', worst: 'west', buffer: 'west' },
-    cold:      { front: primary, best_daylight: 'south', worst: 'north', buffer: 'north' },
-    temperate: { front: primary, best_daylight: 'south', worst: 'west', buffer: 'north' },
+  // Best daylight = front facade (the direction it faces)
+  // Worst facade depends on climate
+  let worst = edges.left  // default: left side
+  if (climate === 'hot_arid' || climate === 'hot_humid') {
+    // In hot climates, the west-facing side is worst
+    // Find which edge is closest to west (270°)
+    const westIdx = Math.round(270 / 45) % 8
+    const frontIdx = Math.round(orientDeg / 45) % 8
+    const leftIdx = (frontIdx + 6) % 8
+    const rightIdx = (frontIdx + 2) % 8
+    worst = Math.abs(leftIdx - westIdx) <= Math.abs(rightIdx - westIdx) ? edges.left : edges.right
+  } else if (climate === 'cold') {
+    // In cold climates, the north-facing side is worst
+    const northIdx = 0
+    const frontIdx = Math.round(orientDeg / 45) % 8
+    const leftIdx = (frontIdx + 6) % 8
+    const rightIdx = (frontIdx + 2) % 8
+    worst = Math.abs(leftIdx - northIdx) <= Math.abs(rightIdx - northIdx) ? edges.left : edges.right
   }
-  return assignments[climate] || assignments.temperate
+
+  return { front: edges.front, best_daylight: edges.front, worst, buffer: worst, edges }
 }
 
 // Re-order rooms based on site_design facade assignments
@@ -387,26 +409,28 @@ function FloorPlan2D({ layout, siteDesign }) {
                   {SCALE_BAR} ft</text>
               </g>
 
-              {/* Facade labels from site_design */}
-              {siteDesign && (
+              {/* Facade labels from site_design — dynamic per orientation */}
+              {siteDesign && facades?.edges && (
                 <g>
-                  {/* Top edge = front facade (best daylight) */}
+                  {/* Top edge = front facade (direction building faces) */}
                   <text x={ox + fw / 2} y={oy - 2} textAnchor="middle" fill="#fbbf24" fontSize={1.6} fontWeight="600">
-                    {facades?.best_daylight?.toUpperCase() || 'S'} facade — best daylight
+                    {facades.edges.front} facade — best daylight
                   </text>
-                  {/* Bottom edge (entry side) */}
+                  {/* Bottom edge = back */}
                   <text x={ox + fw / 2} y={oy + fh + PORCH_H + 6} textAnchor="middle" fill="#02C39A" fontSize={1.4}>
-                    ENTRY · {facades?.front?.toUpperCase() || 'S'}
+                    ENTRY · {facades.edges.front}
                   </text>
                   {/* Left edge */}
-                  <text x={ox - 2} y={oy + fh / 2} textAnchor="end" fill={facades?.worst === 'west' ? '#ef4444' : '#6b7280'} fontSize={1.3}
+                  <text x={ox - 2} y={oy + fh / 2} textAnchor="end"
+                    fill={facades.edges.left === facades.worst ? '#ef4444' : '#6b7280'} fontSize={1.3}
                     transform={`rotate(-90, ${ox - 2}, ${oy + fh / 2})`}>
-                    {facades?.worst === 'west' ? 'W — minimize glazing' : 'W'}
+                    {facades.edges.left}{facades.edges.left === facades.worst ? ' — minimize glazing' : ''}
                   </text>
                   {/* Right edge */}
-                  <text x={ox + fw + 2} y={oy + fh / 2} textAnchor="start" fill="#6b7280" fontSize={1.3}
+                  <text x={ox + fw + 2} y={oy + fh / 2} textAnchor="start"
+                    fill={facades.edges.right === facades.worst ? '#ef4444' : '#6b7280'} fontSize={1.3}
                     transform={`rotate(90, ${ox + fw + 2}, ${oy + fh / 2})`}>
-                    E
+                    {facades.edges.right}{facades.edges.right === facades.worst ? ' — minimize glazing' : ''}
                   </text>
                 </g>
               )}
