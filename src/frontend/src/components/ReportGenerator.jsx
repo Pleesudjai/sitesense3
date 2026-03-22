@@ -56,253 +56,254 @@ function topRisks(result) {
   return items.slice(0, 3)
 }
 
-function buildReportHTML(result, address, houseResult, forecastResult) {
-  const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const verdict = getVerdict(result)
-  const acres = fmt(result.elevation?.area_acres, 2)
-  const foundation = result.foundation?.type?.replace(/_/g, ' ') || '—'
-  const codeRef = result.foundation?.code_ref || 'ACI 360R-10'
-  const totalNow = result.costs?.total_now
-  const proj10 = result.costs?.projections?.['10yr'] ?? result.costs?.projections?.['10']
+// ── Technical Appendix — dynamic "What This Means" helpers ──
 
-  const css = `
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:#1e293b; background:#fff; }
-    .page { padding:48px 56px; min-height:100vh; position:relative; }
-    .page-break { page-break-after:always; }
-    .header-bar { background:#0a1628; color:#fff; padding:20px 56px; display:flex; align-items:center; justify-content:space-between; }
-    .header-bar h1 { font-size:22px; font-weight:800; letter-spacing:-0.5px; }
-    .header-bar .accent { color:#02C39A; }
-    .subtitle { font-size:11px; color:#94a3b8; }
-    h2 { font-size:16px; font-weight:700; color:#0a1628; margin-bottom:8px; border-bottom:2px solid #02C39A; padding-bottom:4px; }
-    h3 { font-size:13px; font-weight:700; color:#334155; margin-bottom:4px; }
-    .meta { font-size:12px; color:#64748b; margin-bottom:16px; }
-    .verdict { font-size:14px; margin:16px 0 24px; padding:12px 16px; border-radius:8px; background:#f8fafc; border-left:4px solid ${verdict.color}; }
-    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
-    .card { border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px; }
-    .card-title { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#64748b; margin-bottom:6px; }
-    .badge { display:inline-block; padding:3px 12px; border-radius:12px; font-weight:700; font-size:13px; color:#fff; }
-    table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px; }
-    th { background:#f1f5f9; text-align:left; padding:6px 10px; font-weight:600; border:1px solid #e2e8f0; }
-    td { padding:6px 10px; border:1px solid #e2e8f0; }
-    .section { margin-bottom:20px; }
-    .section-header { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
-    .explain { font-size:12px; color:#475569; line-height:1.6; }
-    .next-steps { font-size:11px; color:#0369a1; margin-top:4px; }
-    .disclaimer { font-size:10px; color:#94a3b8; border-top:1px solid #e2e8f0; padding-top:10px; margin-top:24px; }
-    .disclaimer-box { border:1px solid #fbbf24; background:#fffbeb; padding:12px 16px; border-radius:8px; font-size:11px; color:#92400e; margin-top:16px; }
-    ul { padding-left:18px; font-size:12px; color:#475569; line-height:1.8; }
-    @media print {
-      body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-      .page { padding:36px 40px; }
-      .header-bar { position:static; }
-    }
-  `
+function explainElevation(avg) {
+  if (avg == null || isNaN(avg)) return 'Elevation data unavailable'
+  if (avg > 7000) return 'High-altitude site — consider frost depth, snow loads, and shorter construction season'
+  if (avg > 5000) return 'Moderate-to-high elevation — verify frost depth and potential snow load requirements'
+  if (avg > 3000) return 'Moderate elevation — no special mountain construction requirements'
+  return 'Low elevation — standard construction practices apply'
+}
 
-  // --- Page 1: Executive Summary ---
-  const page1 = `
-    <div class="header-bar">
-      <div>
-        <h1>Site<span class="accent">Sense</span></h1>
-        <div class="subtitle">AI-Powered Land Feasibility Tool</div>
-      </div>
-      <div style="font-size:11px;color:#94a3b8;">Report generated ${now}</div>
-    </div>
-    <div class="page page-break">
-      <h2>Executive Summary</h2>
-      <div class="meta">
-        ${address ? `<strong>Address:</strong> ${address}<br>` : ''}
-        <strong>Parcel Size:</strong> ${acres} acres &nbsp;|&nbsp;
-        <strong>Date:</strong> ${now}
-      </div>
-      <div class="verdict">
-        This site appears <strong style="color:${verdict.color}">${verdict.text}</strong>.
-      </div>
-      <div class="grid2">
-        <div class="card">
-          <div class="card-title">Overall Feasibility</div>
-          <span class="badge" style="background:${verdict.color}">${verdict.level}</span>
-        </div>
-        <div class="card">
-          <div class="card-title">Top Risks</div>
-          <ul style="margin:0">${topRisks(result).map(r => `<li>${r}</li>`).join('')}</ul>
-        </div>
-        <div class="card">
-          <div class="card-title">Foundation Direction</div>
-          <div style="font-size:14px;font-weight:600;text-transform:capitalize;">${foundation}</div>
-          <div style="font-size:11px;color:#64748b;">${codeRef}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Cost Snapshot</div>
-          <div style="font-size:14px;font-weight:600;">${money(totalNow)}</div>
-          <div style="font-size:11px;color:#64748b;">10-yr projection: ${money(proj10)}</div>
-        </div>
-      </div>
-      <div class="disclaimer">
-        This report is generated by SiteSense for preliminary planning purposes only.
-        All findings must be verified by licensed professionals before any design or construction decisions.
-      </div>
-    </div>
-  `
+function explainElevationRange(min, max) {
+  if (min == null || max == null) return 'Range data unavailable'
+  const relief = max - min
+  if (relief > 50) return `${fmtInt(relief)} ft of relief — significant grading and possible retaining walls`
+  if (relief > 20) return `${fmtInt(relief)} ft of relief — moderate grading required`
+  if (relief > 5) return `Only ${fmtInt(relief)} ft of relief across the parcel — relatively flat`
+  return 'Less than 5 ft of relief — essentially flat site'
+}
 
-  // --- Page 2: Buildability & Constraints ---
-  const slopeLevel = riskLevel(result, 'slope')
-  const floodLevel = riskLevel(result, 'flood')
-  const soilLevel = riskLevel(result, 'soil')
-  const fireLevel = riskLevel(result, 'fire')
+function explainAvgSlope(slope) {
+  if (slope == null || isNaN(slope)) return 'Slope data unavailable'
+  if (slope > 25) return 'Very steep — likely unbuildable without major earthwork and engineering'
+  if (slope > 15) return 'Steep — retaining walls, special foundations, and extensive grading needed'
+  if (slope > 10) return 'Moderate slope — terracing or stepped foundations likely required'
+  if (slope > 5) return 'Gentle slope — minor grading needed, standard foundation with adjustment'
+  if (slope > 3) return 'Mild slope — light grading, standard foundation appropriate'
+  return 'Nearly flat — minimal grading needed, standard foundation appropriate'
+}
 
-  const page2 = `
-    <div class="page page-break">
-      <h2>Buildability &amp; Constraints</h2>
+function explainMaxSlope(slope) {
+  if (slope == null || isNaN(slope)) return 'Max slope data unavailable'
+  if (slope > 25) return 'Steep areas present — retaining walls and erosion control required in those zones'
+  if (slope > 15) return 'Some steep areas — localized retaining or regrading needed'
+  if (slope > 8) return 'Moderate slope pockets — may need local grading adjustments'
+  return 'No steep areas — no retaining walls or special drainage required'
+}
 
-      <div class="section">
-        <div class="section-header"><h3>Terrain &amp; Grading</h3>${severityChip(slopeLevel)}</div>
-        <p class="explain">
-          Average slope is ${fmt(result.slope?.avg_slope_pct)}% with a maximum of ${fmt(result.slope?.max_slope_pct)}%.
-          Elevation ranges from ${fmtInt(result.elevation?.min_ft)} ft to ${fmtInt(result.elevation?.max_ft)} ft
-          (average ${fmtInt(result.elevation?.avg_elevation_ft)} ft).
-          Estimated earthwork: ${fmtInt(result.cut_fill?.cut_cy)} CY cut, ${fmtInt(result.cut_fill?.fill_cy)} CY fill
-          (net ${fmtInt(result.cut_fill?.net_cy)} CY).
-        </p>
-        <p class="next-steps">Check next: site grading plan, haul-off distance for excess material.</p>
-      </div>
+function explainArea(acres) {
+  if (acres == null || isNaN(acres)) return 'Area data unavailable'
+  if (acres > 5) return 'Large lot — ample space for phased development or multiple structures'
+  if (acres > 1) return 'Generous lot — sufficient for most residential or small commercial concepts'
+  if (acres > 0.25) return 'Moderate lot — sufficient for most residential concepts'
+  return 'Compact lot — efficient site planning needed to maximize usable space'
+}
 
-      <div class="section">
-        <div class="section-header"><h3>Flood &amp; Water</h3>${severityChip(floodLevel)}</div>
-        <p class="explain">
-          FEMA flood zone: <strong>${result.flood?.zone || '—'}</strong>.
-          ${result.flood?.risk_level === 'HIGH' ? 'This parcel falls within a Special Flood Hazard Area. Flood insurance and elevated foundations may be required.' : 'No special flood hazard area designation. Standard drainage design applies.'}
-        </p>
-        <p class="next-steps">Check next: local floodplain administrator, drainage report requirements.</p>
-      </div>
+function explainCut(cy) {
+  if (cy == null || isNaN(cy)) return 'Cut data unavailable'
+  if (cy > 50000) return 'Very high cut — significant hauling costs expected'
+  if (cy > 10000) return 'Substantial cut — plan for haul-off logistics and disposal costs'
+  if (cy > 1000) return 'Moderate cut — amount of earth to be removed for grading'
+  return 'Minimal cut — light grading only'
+}
 
-      <div class="section">
-        <div class="section-header"><h3>Soil &amp; Foundation</h3>${severityChip(soilLevel)}</div>
-        <p class="explain">
-          Soil texture: ${result.soil?.texture_class || '—'}.
-          Shrink-swell potential: ${result.soil?.shrink_swell || '—'}.
-          ${result.soil?.caliche ? 'Caliche hardpan detected — may require grade beams and specialized excavation.' : ''}
-          USCS estimate: ${result.soil?.uscs_estimate || '—'}.
-          Presumptive bearing: ${result.soil?.presumptive_bearing_psf ? result.soil.presumptive_bearing_psf + ' psf' : '—'}.
-          Recommended foundation: <strong style="text-transform:capitalize">${foundation}</strong> (${codeRef}).
-        </p>
-        <p class="next-steps">Check next: geotechnical investigation, soil borings.</p>
-      </div>
+function explainFill(cy) {
+  if (cy == null || isNaN(cy)) return 'Fill data unavailable'
+  if (cy > 50000) return 'Very high fill — significant import costs expected'
+  if (cy > 10000) return 'Substantial fill — plan for material import and compaction'
+  if (cy > 1000) return 'Moderate fill — amount of earth to be added for grading'
+  return 'Minimal fill — light grading only'
+}
 
-      <div class="section">
-        <div class="section-header"><h3>Environmental Flags</h3>${severityChip(fireLevel)}</div>
-        <p class="explain">
-          Wetlands: ${result.wetlands?.present ? 'Present — USACE Section 404 permit likely required.' : 'None identified.'}<br>
-          Fire risk: ${result.fire?.risk_class || 'Low'}.<br>
-          ${result.loads?.wind_mph ? `Design wind speed: ${result.loads.wind_mph} mph.` : ''}
-          ${result.loads?.seismic_sdc ? `Seismic Design Category: ${result.loads.seismic_sdc}.` : ''}
-          ${result.loads?.snow_psf ? `Ground snow load: ${result.loads.snow_psf} psf.` : ''}
-        </p>
-        <p class="next-steps">Check next: Phase I ESA, biological survey if near sensitive habitat.</p>
-      </div>
-    </div>
-  `
+function explainNetEarthwork(net) {
+  if (net == null || isNaN(net)) return 'Earthwork data unavailable'
+  const abs = Math.abs(net)
+  if (abs < 500) return 'Near-balanced earthwork — not a significant cost driver'
+  if (net > 0) return `Excess of ~${fmtInt(abs)} CY to export — plan for haul-off costs`
+  return `Deficit of ~${fmtInt(abs)} CY to import — plan for material import costs`
+}
 
-  // --- Page 3: Cost & Decision Support ---
-  const breakdown = result.costs?.breakdown || {}
-  const projections = result.costs?.projections || {}
+function explainSoilTexture(tex) {
+  if (!tex) return 'Soil texture data unavailable'
+  const t = tex.toUpperCase()
+  if (t.includes('CL') || t === 'C') return 'Clay soil — may have expansion potential, verify with geotech'
+  if (t.includes('S') && !t.includes('SI')) return 'Sandy soil — good drainage but may need compaction for bearing'
+  if (t.includes('SI') || t === 'SIL') return 'Silty soil — moderate bearing, watch for moisture sensitivity'
+  if (t.includes('L')) return 'Well-balanced soil — generally favorable for construction'
+  if (t.includes('GR') || t.includes('GP') || t.includes('GW')) return 'Gravelly soil — good bearing and drainage characteristics'
+  return 'Verify soil properties with site-specific geotechnical investigation'
+}
 
-  const breakdownRows = Object.entries(breakdown).map(([k, v]) =>
-    `<tr><td style="text-transform:capitalize">${k.replace(/_/g, ' ')}</td><td style="text-align:right">${money(v)}</td></tr>`
-  ).join('')
+function explainShrinkSwell(level) {
+  if (!level) return 'Shrink-swell data unavailable'
+  const l = level.toLowerCase()
+  if (l === 'high') return 'High expansion risk — post-tensioned slab required (ACI 360R-10 \u00A75.4)'
+  if (l === 'moderate') return 'Moderate expansion risk — consider post-tensioned slab or moisture-controlled fill'
+  return 'Low expansion risk — standard foundation should work'
+}
 
-  const projRows = Object.entries(projections).map(([k, v]) => {
-    const pctChange = totalNow ? (((v - totalNow) / totalNow) * 100).toFixed(1) : '—'
-    return `<tr><td>${k}</td><td style="text-align:right">${money(v)}</td><td style="text-align:right">${totalNow ? (pctChange > 0 ? '+' : '') + pctChange + '%' : '—'}</td></tr>`
-  }).join('')
+function explainUSCS(uscs) {
+  if (!uscs) return 'USCS classification unavailable'
+  const u = uscs.toUpperCase()
+  if (u.includes('CH')) return 'Fat clay — high plasticity, likely expansive, requires engineered foundation'
+  if (u.includes('CL/ML') || u.includes('ML/CL')) return 'Fine-grained soil, moderate bearing — typical for residential'
+  if (u.includes('CL')) return 'Lean clay — moderate bearing, verify expansion potential'
+  if (u.includes('ML')) return 'Low-plasticity silt — moderate bearing, moisture-sensitive'
+  if (u.includes('MH')) return 'High-plasticity silt — compressible, may need ground improvement'
+  if (u.includes('SM') || u.includes('SC')) return 'Silty/clayey sand — generally good bearing with moderate drainage'
+  if (u.includes('SP') || u.includes('SW')) return 'Well-graded or poorly-graded sand — good bearing and drainage'
+  if (u.includes('GP') || u.includes('GW')) return 'Gravel — excellent bearing capacity and drainage'
+  return 'Verify classification with site-specific soil borings'
+}
 
-  const waitCost5yr = projections['5yr'] || projections['5']
-  const waitDiff = (waitCost5yr && totalNow) ? money(waitCost5yr - totalNow) : '$X'
+function explainBearing(psf) {
+  if (psf == null || isNaN(psf)) return 'Bearing data unavailable'
+  if (psf >= 4000) return 'High bearing capacity — suitable for heavy structures per IBC Table 1806.2'
+  if (psf >= 2000) return 'Adequate for conventional foundation per IBC Table 1806.2'
+  if (psf >= 1500) return 'Marginal bearing — may need wider footings or ground improvement'
+  return 'Low bearing capacity — engineered foundation or ground improvement likely required'
+}
 
-  const page3 = `
-    <div class="page page-break">
-      <h2>Cost &amp; Decision Support</h2>
+function explainCaliche(detected) {
+  if (detected) return 'Hardpan layer present — specialized excavation (ripping/jackhammering) adds $3\u20138/SF'
+  return 'No hardpan layer — standard excavation expected'
+}
 
-      <div class="section">
-        <h3>Estimated Site Prep Cost</h3>
-        <table>
-          <thead><tr><th>Item</th><th style="text-align:right">Estimate</th></tr></thead>
-          <tbody>
-            ${breakdownRows}
-            <tr style="font-weight:700;background:#f1f5f9"><td>Total</td><td style="text-align:right">${money(totalNow)}</td></tr>
-          </tbody>
-        </table>
-      </div>
+function explainFloodZone(zone) {
+  if (!zone) return 'Flood zone data unavailable'
+  const z = zone.toUpperCase()
+  if (z.includes('VE') || z.includes('V')) return 'Coastal high-hazard flood zone — elevated construction, flood insurance, and ASCE 7 Ch.5 compliance required'
+  if (z.includes('AE') || z.includes('AO') || z.includes('AH') || z === 'A') return 'Special Flood Hazard Area — flood insurance required, elevated construction may be needed'
+  if (z.includes('X500') || z.includes('B') || z === 'X SHADED') return 'Moderate flood risk — flood insurance recommended but not federally required'
+  if (z === 'X' || z === 'C') return 'Minimal flood risk — no flood insurance required, no elevated construction needed'
+  return 'Verify flood designation with local floodplain administrator'
+}
 
-      <div class="section">
-        <h3>Future Cost Outlook</h3>
-        <table>
-          <thead><tr><th>Period</th><th style="text-align:right">Projected Cost</th><th style="text-align:right">Change</th></tr></thead>
-          <tbody>${projRows}</tbody>
-        </table>
-      </div>
+function explainSDS(sds) {
+  if (sds == null || isNaN(sds)) return 'Seismic data unavailable'
+  if (sds >= 1.0) return 'Very high seismic demand — rigorous seismic detailing and special structural systems required'
+  if (sds >= 0.5) return 'Moderate seismic demand — seismic detailing required per ASCE 7-22'
+  if (sds >= 0.33) return 'Low-to-moderate seismic demand — standard seismic provisions apply'
+  return 'Low seismic demand — standard construction, no special seismic detailing'
+}
 
-      <div class="section">
-        <h3>Build Now vs. Wait</h3>
-        <p class="explain">
-          Construction costs are rising at approximately 4.5% per year (ENR CCI).
-          Waiting 5 years adds roughly <strong>${waitDiff}</strong> to site preparation costs.
-          Early action locks in today's pricing and avoids compounding escalation.
-        </p>
-      </div>
+function explainSD1(sd1) {
+  if (sd1 == null || isNaN(sd1)) return 'Seismic data unavailable'
+  if (sd1 >= 0.4) return 'High long-period ground motion — critical for tall/flexible structures'
+  if (sd1 >= 0.2) return 'Moderate long-period ground motion — seismic provisions apply'
+  if (sd1 >= 0.1) return 'Low-to-moderate long-period ground motion — basic seismic provisions'
+  return 'Low long-period ground motion — low seismic risk'
+}
 
-      <div class="section">
-        <h3>Recommended Next Steps</h3>
-        <ul>
-          <li>Commission a geotechnical investigation (soil borings + lab testing)</li>
-          <li>Obtain a boundary and topographic survey from a licensed surveyor</li>
-          <li>Verify zoning entitlements and setback requirements with the local jurisdiction</li>
-          <li>Request a Phase I Environmental Site Assessment if commercial use is planned</li>
-          <li>Engage a licensed civil engineer for grading and drainage design</li>
-        </ul>
-      </div>
+function explainSDC(sdc) {
+  if (!sdc) return 'Seismic design category unavailable'
+  const s = sdc.toUpperCase()
+  if (s === 'E' || s === 'F') return 'Highest seismic design category — stringent detailing, special moment frames likely'
+  if (s === 'D' || s === 'D0' || s === 'D1' || s === 'D2') return 'High seismic design category — special seismic-force-resisting systems required'
+  if (s === 'C') return 'Moderate seismic design category — intermediate detailing required'
+  if (s === 'B') return 'Low seismic design category — basic structural provisions apply'
+  return 'Minimal seismic design category — no seismic detailing required beyond gravity loads'
+}
 
-      <div class="disclaimer-box">
-        <strong>Professional Review Required.</strong> This report is an automated preliminary assessment
-        based on publicly available GIS data. It does not replace site-specific investigations by licensed
-        geotechnical, structural, or civil engineers. All cost estimates are approximate ROM (Rough Order of
-        Magnitude) figures subject to change based on site-specific conditions, market fluctuations, and
-        jurisdictional requirements.
-      </div>
-    </div>
-  `
+function explainWind(mph) {
+  if (mph == null || isNaN(mph)) return 'Wind data unavailable'
+  if (mph >= 150) return 'Extreme wind zone — hurricane-resistant construction required (ASCE 7-22 Ch.26-27)'
+  if (mph >= 130) return 'High wind zone — enhanced connections and impact-resistant glazing likely required'
+  if (mph >= 115) return 'Elevated wind zone — verify component and cladding pressures'
+  return 'Standard design wind — no hurricane or high-wind provisions needed'
+}
 
-  // --- Page 4: Technical Appendix ---
-  const page4 = `
+function explainSnow(psf) {
+  if (psf == null || isNaN(psf) || psf === 0) return 'No snow load — site is below snow-prone elevation'
+  if (psf > 50) return 'Heavy snow load — robust roof framing required per ASCE 7-22 Ch.7'
+  if (psf > 25) return 'Moderate snow load — verify roof framing capacity per ASCE 7-22 Ch.7'
+  return 'Light snow load — standard roof framing with snow considerations'
+}
+
+function explainFire(riskClass) {
+  if (!riskClass) return 'Fire risk data unavailable'
+  const r = riskClass.toLowerCase()
+  if (r === 'very high' || r === 'extreme') return 'High-risk WUI zone — ignition-resistant construction, defensible space, and fire-rated materials required'
+  if (r === 'high') return 'Elevated fire risk — wildland-urban interface provisions recommended'
+  if (r === 'moderate') return 'Moderate fire risk — standard construction with fire-wise landscaping recommended'
+  return 'Not in a wildland-urban interface zone'
+}
+
+function explainWetlands(present) {
+  if (present) return 'Wetland constraints present — USACE Section 404 permit required, potential buildable area reduction'
+  return 'No wetland constraints — no Section 404 permit needed'
+}
+
+function appendixRow(param, value, explanation) {
+  return `<tr><td>${param}</td><td>${value}</td><td style="color:#475569;font-style:italic;">${explanation}</td></tr>`
+}
+
+function buildAppendixHTML(result, codeRef) {
+  const avgElev = result.elevation?.avg_elevation_ft
+  const minElev = result.elevation?.min_ft
+  const maxElev = result.elevation?.max_ft
+  const avgSlope = result.slope?.avg_slope_pct
+  const maxSlope = result.slope?.max_slope_pct
+  const area = result.elevation?.area_acres
+  const cutCy = result.cut_fill?.cut_cy
+  const fillCy = result.cut_fill?.fill_cy
+  const netCy = result.cut_fill?.net_cy
+  const soilTex = result.soil?.texture_class
+  const shrinkSwell = result.soil?.shrink_swell
+  const uscs = result.soil?.uscs_estimate
+  const bearing = result.soil?.presumptive_bearing_psf
+  const caliche = result.soil?.caliche
+  const floodZone = result.flood?.zone
+  const sds = result.seismic?.sds
+  const sd1 = result.seismic?.sd1
+  const sdc = result.loads?.seismic_sdc
+  const wind = result.loads?.wind_mph
+  const snow = result.loads?.snow_psf
+  const fire = result.fire?.risk_class
+  const wetlands = result.wetlands?.present
+
+  const sectionHeader = (title) =>
+    `<tr><td colspan="3" style="background:#0a1628;color:#fff;font-weight:700;font-size:12px;padding:8px 10px;letter-spacing:0.5px;">${title}</td></tr>`
+
+  const thRow = `<thead><tr><th style="width:22%;">Parameter</th><th style="width:18%;">Value</th><th style="width:60%;">What This Means</th></tr></thead>`
+
+  return `
     <div class="page">
       <h2>Technical Appendix</h2>
 
       <div class="section">
-        <h3>Raw Site Metrics</h3>
+        <h3>Detailed Site Metrics</h3>
         <table>
-          <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+          ${thRow}
           <tbody>
-            <tr><td>Avg Elevation</td><td>${fmtInt(result.elevation?.avg_elevation_ft)} ft</td></tr>
-            <tr><td>Min / Max Elevation</td><td>${fmtInt(result.elevation?.min_ft)} / ${fmtInt(result.elevation?.max_ft)} ft</td></tr>
-            <tr><td>Avg Slope</td><td>${fmt(result.slope?.avg_slope_pct)}%</td></tr>
-            <tr><td>Max Slope</td><td>${fmt(result.slope?.max_slope_pct)}%</td></tr>
-            <tr><td>Parcel Area</td><td>${fmt(result.elevation?.area_acres, 2)} acres</td></tr>
-            <tr><td>Flood Zone</td><td>${result.flood?.zone || '—'}</td></tr>
-            <tr><td>Soil Texture</td><td>${result.soil?.texture_class || '—'}</td></tr>
-            <tr><td>Shrink-Swell</td><td>${result.soil?.shrink_swell || '—'}</td></tr>
-            <tr><td>USCS Estimate</td><td>${result.soil?.uscs_estimate || '—'}</td></tr>
-            <tr><td>Presumptive Bearing</td><td>${result.soil?.presumptive_bearing_psf ? result.soil.presumptive_bearing_psf + ' psf' : '—'}</td></tr>
-            <tr><td>Caliche</td><td>${result.soil?.caliche ? 'Detected' : 'Not detected'}</td></tr>
-            <tr><td>Seismic S<sub>DS</sub></td><td>${fmt(result.seismic?.sds, 3)}</td></tr>
-            <tr><td>Seismic S<sub>D1</sub></td><td>${fmt(result.seismic?.sd1, 3)}</td></tr>
-            <tr><td>Seismic SDC</td><td>${result.loads?.seismic_sdc || '—'}</td></tr>
-            <tr><td>Wind Speed</td><td>${result.loads?.wind_mph ? result.loads.wind_mph + ' mph' : '—'}</td></tr>
-            <tr><td>Snow Load</td><td>${result.loads?.snow_psf ? result.loads.snow_psf + ' psf' : '—'}</td></tr>
-            <tr><td>Fire Risk</td><td>${result.fire?.risk_class || '—'}</td></tr>
-            <tr><td>Wetlands</td><td>${result.wetlands?.present ? 'Present' : 'None'}</td></tr>
-            <tr><td>Cut Volume</td><td>${fmtInt(result.cut_fill?.cut_cy)} CY</td></tr>
-            <tr><td>Fill Volume</td><td>${fmtInt(result.cut_fill?.fill_cy)} CY</td></tr>
-            <tr><td>Net Earthwork</td><td>${fmtInt(result.cut_fill?.net_cy)} CY</td></tr>
+            ${sectionHeader('Terrain')}
+            ${appendixRow('Avg Elevation', `${fmtInt(avgElev)} ft`, explainElevation(avgElev))}
+            ${appendixRow('Min / Max Elevation', `${fmtInt(minElev)} / ${fmtInt(maxElev)} ft`, explainElevationRange(minElev, maxElev))}
+            ${appendixRow('Avg Slope', `${fmt(avgSlope)}%`, explainAvgSlope(avgSlope))}
+            ${appendixRow('Max Slope', `${fmt(maxSlope)}%`, explainMaxSlope(maxSlope))}
+            ${appendixRow('Parcel Area', `${fmt(area, 2)} acres`, explainArea(area))}
+            ${appendixRow('Cut Volume', `${fmtInt(cutCy)} CY`, explainCut(cutCy))}
+            ${appendixRow('Fill Volume', `${fmtInt(fillCy)} CY`, explainFill(fillCy))}
+            ${appendixRow('Net Earthwork', `${fmtInt(netCy)} CY`, explainNetEarthwork(netCy))}
+
+            ${sectionHeader('Soil &amp; Foundation')}
+            ${appendixRow('Soil Texture', soilTex || '\u2014', explainSoilTexture(soilTex))}
+            ${appendixRow('Shrink-Swell', shrinkSwell || '\u2014', explainShrinkSwell(shrinkSwell))}
+            ${appendixRow('USCS Estimate', uscs || '\u2014', explainUSCS(uscs))}
+            ${appendixRow('Presumptive Bearing', bearing ? bearing + ' psf' : '\u2014', explainBearing(bearing))}
+            ${appendixRow('Caliche', caliche ? 'Detected' : 'Not detected', explainCaliche(caliche))}
+
+            ${sectionHeader('Hazards')}
+            ${appendixRow('Flood Zone', floodZone || '\u2014', explainFloodZone(floodZone))}
+            ${appendixRow('Seismic S<sub>DS</sub>', fmt(sds, 3), explainSDS(sds))}
+            ${appendixRow('Seismic S<sub>D1</sub>', fmt(sd1, 3), explainSD1(sd1))}
+            ${appendixRow('Seismic SDC', sdc || '\u2014', explainSDC(sdc))}
+            ${appendixRow('Wind Speed', wind ? wind + ' mph' : '\u2014', explainWind(wind))}
+            ${appendixRow('Snow Load', snow ? snow + ' psf' : '\u2014', explainSnow(snow))}
+            ${appendixRow('Fire Risk', fire || '\u2014', explainFire(fire))}
+            ${appendixRow('Wetlands', wetlands ? 'Present' : 'None', explainWetlands(wetlands))}
           </tbody>
         </table>
       </div>
@@ -310,10 +311,12 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
       <div class="section">
         <h3>Code References</h3>
         <ul>
-          <li><strong>ACI 350-20 / 350R-20</strong> — Environmental engineering concrete structures</li>
-          <li><strong>ACI 360R-10</strong> — Slab-on-ground design and construction</li>
-          <li><strong>ASCE 7-22</strong> — Minimum design loads (wind Ch.26-27, seismic Ch.12, flood Ch.5, snow Ch.7)</li>
-          <li><strong>IBC 2021</strong> — Soils &sect;1803, Flood &sect;1612</li>
+          <li><strong>Foundation:</strong> ${codeRef || 'ACI 360R-10'}</li>
+          <li><strong>Seismic:</strong> ASCE 7-22 Ch. 12</li>
+          <li><strong>Wind:</strong> ASCE 7-22 Ch. 26-27</li>
+          <li><strong>Soil:</strong> IBC 2021 &sect;1803, Table 1806.2</li>
+          <li><strong>Flood:</strong> ASCE 7-22 Ch. 5</li>
+          <li><strong>Snow:</strong> ASCE 7-22 Ch. 7</li>
         </ul>
       </div>
 
@@ -334,6 +337,577 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
       </div>
     </div>
   `
+}
+
+function buildReportHTML(result, address, houseResult, forecastResult) {
+  const now = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const verdict = getVerdict(result)
+  const acres = fmt(result.elevation?.area_acres, 2)
+  const foundation = result.foundation?.type?.replace(/_/g, ' ') || '\u2014'
+  const codeRef = result.foundation?.code_ref || 'ACI 360R-10'
+  const totalNow = result.costs?.total_now
+  const proj5 = result.costs?.projections?.['5yr'] ?? result.costs?.projections?.['5']
+  const proj10 = result.costs?.projections?.['10yr'] ?? result.costs?.projections?.['10']
+
+  // ── Buildable area calculations ──
+  const totalAreaSf = (result.elevation?.area_acres || 0) * 43560
+  const buildableSf = result.buildable_sf || totalAreaSf
+  const constrainedPct = totalAreaSf > 0 ? Math.round((1 - buildableSf / totalAreaSf) * 100) : 0
+  const buildableAcres = (buildableSf / 43560).toFixed(2)
+
+  // ── Biggest single risk for the callout card ──
+  const biggestRisk = (() => {
+    if (result.flood?.risk_level === 'HIGH')
+      return { name: 'Flood Zone', detail: `This parcel is in FEMA flood zone ${result.flood?.zone || 'AE'}, which requires flood insurance ($2,000\u20135,000/year) and may need elevated construction.` }
+    if (result.soil?.shrink_swell === 'High' || result.soil?.expansive_risk === 'High')
+      return { name: 'Expansive Soil', detail: 'Expansive clay soil means your foundation will cost more than a standard slab. A post-tensioned or pier foundation is likely needed.' }
+    if (result.soil?.caliche)
+      return { name: 'Caliche Hardpan', detail: 'Hard caliche layer below grade will increase excavation costs and may require grade beams instead of a standard slab.' }
+    if (result.slope?.avg_slope_pct > 15)
+      return { name: 'Steep Slope', detail: `Average slope of ${fmt(result.slope.avg_slope_pct)}% will require significant grading, retaining walls, or stepped foundation design.` }
+    if (result.wetlands?.present)
+      return { name: 'Wetlands Present', detail: 'Wetlands on the parcel will reduce buildable area and require a USACE Section 404 permit before any fill or grading.' }
+    if (result.fire?.risk_class === 'HIGH' || result.fire?.risk_class === 'Very High')
+      return { name: 'Wildfire Risk', detail: 'High fire risk zone. Ignition-resistant construction materials and defensible space will be required.' }
+    if (result.slope?.avg_slope_pct > 8)
+      return { name: 'Moderate Slope', detail: `Average slope of ${fmt(result.slope.avg_slope_pct)}% will require some grading work, but is manageable with standard earthwork.` }
+    return { name: 'No Major Concerns', detail: 'No high-severity risks were identified. Standard construction practices should apply.' }
+  })()
+
+  // ── Foundation plain-English explanation ──
+  const foundationExplain = (() => {
+    const t = (result.foundation?.type || '').toLowerCase()
+    if (t.includes('post_tension') || t.includes('pt_slab') || t.includes('post-tension'))
+      return 'Post-tensioned slab recommended due to expansive soil. This prevents cracking from soil movement.'
+    if (t.includes('pier') || t.includes('drilled'))
+      return 'Deep pier foundation recommended to reach stable bearing soil below the surface.'
+    if (t.includes('grade_beam') || t.includes('grade beam'))
+      return 'Grade beams recommended due to caliche or variable soil conditions.'
+    return 'Standard slab-on-grade foundation should work for this site.'
+  })()
+
+  // ── Verdict sentence (plain English why) ──
+  const verdictSentence = (() => {
+    const v = verdict.level
+    if (v === 'FEASIBLE')
+      return 'No major deal-breakers were found. Standard site preparation and foundation should work for most building types.'
+    if (v === 'CAUTION') {
+      const concerns = []
+      if (result.slope?.avg_slope_pct > 8) concerns.push('moderate slope')
+      if (result.soil?.shrink_swell === 'High' || result.soil?.expansive_risk === 'High') concerns.push('expansive soil')
+      if (result.flood?.risk_level === 'HIGH') concerns.push('flood zone location')
+      if (result.fire?.risk_class === 'HIGH' || result.fire?.risk_class === 'Very High') concerns.push('fire risk')
+      if (result.wetlands?.present) concerns.push('wetlands')
+      const joined = concerns.length > 0 ? concerns.join(' and ') : 'some site conditions'
+      return `${joined.charAt(0).toUpperCase() + joined.slice(1)} may increase foundation and site prep costs, but no major deal-breakers were found.`
+    }
+    return 'Multiple site constraints will significantly increase costs and complexity. Professional investigation is strongly recommended before committing.'
+  })()
+
+  // ── Verdict banner visual config ──
+  const verdictBg = { FEASIBLE: '#f0fdf4', CAUTION: '#fffbeb', CHALLENGING: '#fef2f2' }
+  const verdictBorder = { FEASIBLE: '#22c55e', CAUTION: '#f59e0b', CHALLENGING: '#ef4444' }
+  const verdictLabel = { FEASIBLE: 'This site appears feasible', CAUTION: 'Feasible with concerns', CHALLENGING: 'Significant challenges identified' }
+
+  // ── Risk table rows with plain-English implications ──
+  const riskRows = (() => {
+    const rows = []
+    const slopeL = riskLevel(result, 'slope')
+    const floodL = riskLevel(result, 'flood')
+    const soilL = riskLevel(result, 'soil')
+    const fireL = riskLevel(result, 'fire')
+
+    const fz = result.flood?.zone || 'X'
+    let floodImpl = 'No significant flood risk \u2014 standard insurance rates apply.'
+    if (floodL === 'HIGH') floodImpl = `Located in FEMA zone ${fz}. Flood insurance required ($2,000\u20135,000/year). Elevated construction may be needed.`
+    else if (floodL === 'MODERATE') floodImpl = `Near a flood-prone area (zone ${fz}). Flood insurance is recommended but may not be mandatory.`
+    rows.push({ name: 'Flood', level: floodL, impl: floodImpl })
+
+    let soilImpl = 'Soil conditions are suitable for standard foundation construction.'
+    if (soilL === 'HIGH') soilImpl = 'Expansive clay soil will require a specialized foundation (post-tensioned slab or piers), adding $5\u201315/SF to foundation costs.'
+    else if (soilL === 'MODERATE') soilImpl = 'Moderate shrink-swell potential. Enhanced foundation design may be needed \u2014 get a geotechnical report to confirm.'
+    rows.push({ name: 'Soil', level: soilL, impl: soilImpl })
+
+    let slopeImpl = 'Relatively flat \u2014 minimal grading costs expected.'
+    if (slopeL === 'HIGH') slopeImpl = `Steep terrain (${fmt(result.slope?.avg_slope_pct)}% avg). Significant earthwork, retaining walls, or stepped foundations will be needed.`
+    else if (slopeL === 'MODERATE') slopeImpl = `Moderate slope (${fmt(result.slope?.avg_slope_pct)}% avg). Some grading required, but manageable with standard earthwork.`
+    rows.push({ name: 'Slope', level: slopeL, impl: slopeImpl })
+
+    let fireImpl = 'Low fire risk \u2014 no special fire-resistant construction required.'
+    if (fireL === 'HIGH') fireImpl = 'High wildfire risk zone. Ignition-resistant materials, defensible space, and enhanced insurance costs apply.'
+    else if (fireL === 'MODERATE') fireImpl = 'Moderate fire risk. Fire-resistant roofing and ember-resistant vents are recommended.'
+    rows.push({ name: 'Fire', level: fireL, impl: fireImpl })
+
+    const wetlandL = result.wetlands?.present ? 'HIGH' : 'LOW'
+    let wetlandImpl = 'No wetlands identified \u2014 no environmental permits needed for this factor.'
+    if (result.wetlands?.present) wetlandImpl = 'Wetlands present on parcel. USACE Section 404 permit required before any grading or fill. This can add 3\u20136 months to your timeline.'
+    rows.push({ name: 'Wetlands', level: wetlandL, impl: wetlandImpl })
+
+    const sdc = result.loads?.seismic_sdc || result.seismic?.sdc || ''
+    let seismicL = 'LOW'
+    let seismicImpl = 'Low seismic risk \u2014 standard construction details apply.'
+    if (sdc >= 'D') { seismicL = 'HIGH'; seismicImpl = `Seismic Design Category ${sdc}. Special seismic detailing required, adding to engineering and construction costs.` }
+    else if (sdc === 'C') { seismicL = 'MODERATE'; seismicImpl = `Seismic Design Category ${sdc}. Some additional seismic detailing needed, but standard wood-frame construction is permitted.` }
+    else if (sdc) { seismicImpl = `Seismic Design Category ${sdc}. Standard construction details are sufficient.` }
+    rows.push({ name: 'Seismic', level: seismicL, impl: seismicImpl })
+
+    return rows
+  })()
+
+  const riskTableHTML = riskRows.map(r => {
+    const chipColors = { LOW: '#22c55e', MODERATE: '#f59e0b', HIGH: '#ef4444' }
+    const chipBg = chipColors[r.level] || '#94a3b8'
+    return `<tr>
+      <td style="font-weight:600;width:80px;vertical-align:top;">${r.name}</td>
+      <td style="width:95px;vertical-align:top;text-align:center;">
+        <span style="display:inline-block;padding:3px 14px;border-radius:12px;font-size:11px;font-weight:700;color:#fff;background:${chipBg};">${r.level}</span>
+      </td>
+      <td style="font-size:13px;color:#334155;line-height:1.5;">${r.impl}</td>
+    </tr>`
+  }).join('')
+
+  // ── CSS — updated for user-first layout ──
+  const css = `
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color:#1e293b; background:#fff; }
+    .page { padding:48px 56px; min-height:100vh; position:relative; }
+    .page-break { page-break-after:always; }
+
+    .header-bar { background:#0a1628; color:#fff; padding:20px 56px; display:flex; align-items:center; justify-content:space-between; }
+    .header-bar h1 { font-size:22px; font-weight:800; letter-spacing:-0.5px; }
+    .header-bar .accent { color:#02C39A; }
+    .subtitle { font-size:11px; color:#94a3b8; }
+
+    h2 { font-size:16px; font-weight:700; color:#0a1628; margin-bottom:8px; border-bottom:2px solid #02C39A; padding-bottom:4px; }
+    h3 { font-size:14px; font-weight:700; color:#334155; margin-bottom:4px; }
+    .meta { font-size:12px; color:#64748b; margin-bottom:12px; }
+
+    /* Verdict box — the dominant visual element on page 1 */
+    .verdict-box {
+      margin:0 0 24px; padding:20px 24px; border-radius:10px;
+      border-left:6px solid ${verdictBorder[verdict.level]};
+      background:${verdictBg[verdict.level]};
+    }
+    .verdict-label { font-size:20px; font-weight:800; color:${verdict.color}; margin-bottom:6px; }
+    .verdict-why { font-size:14px; color:#334155; line-height:1.6; }
+
+    /* 2x2 callout card grid */
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:24px; }
+    .callout-card { border:1px solid #e2e8f0; border-radius:8px; padding:16px 18px; background:#fff; }
+    .callout-card .card-label { font-size:10px; text-transform:uppercase; letter-spacing:0.8px; color:#64748b; font-weight:700; margin-bottom:6px; }
+    .callout-card .card-value { font-size:18px; font-weight:700; color:#0a1628; margin-bottom:4px; }
+    .callout-card .card-detail { font-size:12px; color:#475569; line-height:1.5; }
+
+    /* Risk traffic-light table — implication text is LARGER than technical value */
+    table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px; }
+    th { background:#f1f5f9; text-align:left; padding:8px 10px; font-weight:600; border:1px solid #e2e8f0; }
+    td { padding:8px 10px; border:1px solid #e2e8f0; }
+
+    .card { border:1px solid #e2e8f0; border-radius:8px; padding:14px 16px; }
+    .card-title { font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:#64748b; margin-bottom:6px; }
+    .badge { display:inline-block; padding:3px 12px; border-radius:12px; font-weight:700; font-size:13px; color:#fff; }
+
+    .section { margin-bottom:22px; }
+    .section-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .explain { font-size:13px; color:#475569; line-height:1.7; }
+    .explain .tech-value { font-size:11px; color:#94a3b8; }
+    .explain .means { font-size:13px; color:#1e293b; font-weight:500; }
+
+    /* "What to check next" — light blue to stand out */
+    .check-next {
+      background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px;
+      padding:10px 14px; margin-top:8px; font-size:12px; color:#1e40af; line-height:1.5;
+    }
+    .check-next strong { font-weight:700; }
+
+    .disclaimer { font-size:10px; color:#94a3b8; border-top:1px solid #e2e8f0; padding-top:10px; margin-top:24px; }
+    .disclaimer-box { border:1px solid #fbbf24; background:#fffbeb; padding:12px 16px; border-radius:8px; font-size:11px; color:#92400e; margin-top:16px; }
+    ul { padding-left:18px; font-size:12px; color:#475569; line-height:1.8; }
+
+    @media print {
+      body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .page { padding:36px 40px; }
+      .header-bar { position:static; }
+    }
+  `
+
+  // =========================================================================
+  // PAGE 1: "Can I Build Here?" — answers Pain 1 (buildability) + Pain 2 (costs)
+  // =========================================================================
+  const page1 = `
+    <div class="header-bar">
+      <div>
+        <h1>Site<span class="accent">Sense</span> Feasibility Report</h1>
+        <div class="subtitle">AI-Powered Land Feasibility Tool</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:11px;color:#94a3b8;">${now}</div>
+        <div style="font-size:11px;color:#94a3b8;">Parcel: ${acres} acres</div>
+      </div>
+    </div>
+    <div class="page page-break">
+      ${address ? `<div class="meta"><strong>${address}</strong></div>` : ''}
+
+      <!-- VERDICT BOX — the most important element on the page -->
+      <div class="verdict-box">
+        <div class="verdict-label">${verdictLabel[verdict.level]}</div>
+        <div class="verdict-why">${verdictSentence}</div>
+      </div>
+
+      <!-- "What You Should Know First" — 4 callout cards in 2x2 grid -->
+      <h2>What You Should Know First</h2>
+      <div class="grid2">
+        <div class="callout-card">
+          <div class="card-label">Buildable Area</div>
+          <div class="card-value">${buildableAcres} ac usable <span style="font-size:13px;font-weight:400;color:#64748b;">of ${acres} total</span></div>
+          <div class="card-detail">${constrainedPct > 0
+            ? `Wetlands, steep slopes, and setbacks reduce your usable area by ${constrainedPct}%.`
+            : 'Nearly all of the parcel area is usable after accounting for standard setbacks.'}</div>
+        </div>
+        <div class="callout-card">
+          <div class="card-label">Biggest Risk</div>
+          <div class="card-value">${biggestRisk.name}</div>
+          <div class="card-detail">${biggestRisk.detail}</div>
+        </div>
+        <div class="callout-card">
+          <div class="card-label">Estimated Site Prep</div>
+          <div class="card-value">${money(totalNow)} <span style="font-size:13px;font-weight:400;color:#64748b;">today</span></div>
+          <div class="card-detail">${proj5 ? `${money(proj5)} in 5 years. ` : ''}Construction costs are rising ~4.5%/year (ENR CCI).</div>
+        </div>
+        <div class="callout-card">
+          <div class="card-label">Foundation Direction</div>
+          <div class="card-value" style="text-transform:capitalize;">${foundation}</div>
+          <div class="card-detail">${foundationExplain} <span style="font-size:11px;color:#94a3b8;">(${codeRef})</span></div>
+        </div>
+      </div>
+
+      <!-- "Top Risks at a Glance" — traffic light table -->
+      <h2>Top Risks at a Glance</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Risk</th>
+            <th style="text-align:center;">Level</th>
+            <th>What It Means</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${riskTableHTML}
+        </tbody>
+      </table>
+
+      <div class="disclaimer">
+        This report is generated by SiteSense for preliminary planning purposes only.
+        All findings must be verified by licensed professionals before any design or construction decisions.
+      </div>
+    </div>
+  `
+
+  // =========================================================================
+  // PAGE 2: "What Could Surprise You" — answers Pain 2 deeper
+  // 4 sections, each with: heading, severity chip, plain English, "What to check next"
+  // =========================================================================
+  const slopeLevel = riskLevel(result, 'slope')
+  const floodLevel = riskLevel(result, 'flood')
+  const soilLevel = riskLevel(result, 'soil')
+  const fireLevel = riskLevel(result, 'fire')
+
+  // Grading cost estimate (rough: $8-15/CY for earthwork)
+  const totalEarthworkCY = (result.cut_fill?.cut_cy || 0) + (result.cut_fill?.fill_cy || 0)
+  const gradingCostLow = totalEarthworkCY * 8
+  const gradingCostHigh = totalEarthworkCY * 15
+
+  // Slope direction
+  const slopeDir = result.slope?.direction || result.slope?.aspect || ''
+  const slopeDirText = slopeDir ? ` The lot slopes toward the ${slopeDir.toLowerCase()}.` : ''
+
+  // Flood plain English
+  const floodZone = result.flood?.zone || 'X'
+  const floodBFE = result.flood?.bfe_ft
+  const floodExplain = (() => {
+    if (floodLevel === 'HIGH') {
+      let txt = `This parcel is in FEMA flood zone ${floodZone}, a Special Flood Hazard Area.`
+      txt += ' This affects insurance costs ($2,000\u20135,000/year) and may require elevated construction.'
+      if (floodBFE) txt += ` The Base Flood Elevation is ${fmtInt(floodBFE)} ft.`
+      return txt
+    }
+    if (floodLevel === 'MODERATE')
+      return `This parcel is in FEMA zone ${floodZone}, near a flood-prone area. Flood insurance is recommended but may not be mandatory.`
+    return `This parcel is in FEMA zone ${floodZone} \u2014 no significant flood risk. Standard drainage design and insurance rates apply.`
+  })()
+
+  // Soil plain English
+  const soilExplain = (() => {
+    const texture = result.soil?.texture_class || 'Unknown'
+    const ss = result.soil?.shrink_swell || 'Low'
+    const bearing = result.soil?.presumptive_bearing_psf
+    const caliche = result.soil?.caliche
+    let txt = `The soil is classified as ${texture}`
+    if (bearing) txt += ` with a presumptive bearing capacity of ${fmtInt(bearing)} psf`
+    txt += '.'
+    if (ss === 'High' || result.soil?.expansive_risk === 'High')
+      txt += ' High shrink-swell potential means the soil expands when wet and contracts when dry. This causes cracking in standard slabs \u2014 a post-tensioned or pier foundation is needed.'
+    else if (ss === 'Moderate')
+      txt += ' Moderate shrink-swell potential. Enhanced foundation design may be prudent \u2014 a geotechnical report will confirm whether a standard slab is adequate.'
+    else
+      txt += ' The soil has low expansion risk. A standard foundation should work, but a geotechnical boring ($2,000\u20134,000) is still recommended before design.'
+    if (caliche)
+      txt += ' Caliche hardpan was detected, which will increase excavation difficulty and cost ($3\u20138/SF uplift for specialized equipment).'
+    return txt
+  })()
+
+  // Environmental flags plain English
+  const envFlags = (() => {
+    const items = []
+    if (result.wetlands?.present) {
+      const coverage = result.wetlands?.coverage_pct
+      let txt = 'Wetlands are present on this parcel'
+      if (coverage) txt += ` (approximately ${fmt(coverage, 0)}% coverage)`
+      txt += '. A USACE Section 404 permit is required before any fill, grading, or construction in wetland areas. This typically adds 3\u20136 months and $5,000\u201315,000 in permitting costs.'
+      items.push({ flag: 'Wetlands', text: txt })
+    } else {
+      items.push({ flag: 'Wetlands', text: 'No wetlands identified on this parcel. No wetland-related permits are needed.' })
+    }
+    const fireClass = result.fire?.risk_class || 'Low'
+    if (fireLevel === 'HIGH')
+      items.push({ flag: 'Wildfire', text: `Fire risk is rated ${fireClass}. Ignition-resistant construction materials, ember-resistant vents, and defensible space (30\u2013100 ft vegetation clearance) will be required. This adds to both construction and ongoing maintenance costs.` })
+    else if (fireLevel === 'MODERATE')
+      items.push({ flag: 'Wildfire', text: `Fire risk is rated ${fireClass}. Fire-resistant roofing and ember-resistant vents are recommended.` })
+    else
+      items.push({ flag: 'Wildfire', text: 'Low fire risk. No special fire-resistant construction is required.' })
+    const loadNotes = []
+    if (result.loads?.wind_mph) loadNotes.push(`Design wind speed: ${result.loads.wind_mph} mph`)
+    if (result.loads?.seismic_sdc) loadNotes.push(`Seismic Design Category: ${result.loads.seismic_sdc}`)
+    if (result.loads?.snow_psf && result.loads.snow_psf > 0) loadNotes.push(`Ground snow load: ${result.loads.snow_psf} psf`)
+    if (loadNotes.length > 0)
+      items.push({ flag: 'Design Loads', text: loadNotes.join('. ') + '. These are factored into the structural design requirements and cost estimates.' })
+    return items
+  })()
+
+  const page2 = `
+    <div class="page page-break">
+      <h2>What Could Surprise You</h2>
+      <p style="font-size:13px;color:#64748b;margin-bottom:20px;">Each section below highlights a potential cost driver and tells you exactly what to investigate next.</p>
+
+      <!-- 1. Terrain & Grading -->
+      <div class="section">
+        <div class="section-header">
+          <h3>1. Terrain &amp; Grading</h3>
+          ${severityChip(slopeLevel)}
+        </div>
+        <p class="explain">
+          <span class="means">
+            ${slopeLevel === 'LOW'
+              ? `The lot is relatively flat with an average slope of ${fmt(result.slope?.avg_slope_pct)}%. Minimal grading is needed.${slopeDirText}`
+              : slopeLevel === 'MODERATE'
+                ? `The lot has a moderate average slope of ${fmt(result.slope?.avg_slope_pct)}% (max ${fmt(result.slope?.max_slope_pct)}%).${slopeDirText} Grading will cost approximately ${money(gradingCostLow)}\u2013${money(gradingCostHigh)} for earthwork.`
+                : `The lot has a steep average slope of ${fmt(result.slope?.avg_slope_pct)}% (max ${fmt(result.slope?.max_slope_pct)}%).${slopeDirText} Significant grading, retaining walls, or stepped foundations will be needed. Estimated earthwork cost: ${money(gradingCostLow)}\u2013${money(gradingCostHigh)}.`
+            }
+          </span>
+          <br><span class="tech-value">Elevation: ${fmtInt(result.elevation?.min_ft)}\u2013${fmtInt(result.elevation?.max_ft)} ft (avg ${fmtInt(result.elevation?.avg_elevation_ft)} ft) &nbsp;|&nbsp; Earthwork: ${fmtInt(result.cut_fill?.cut_cy)} CY cut, ${fmtInt(result.cut_fill?.fill_cy)} CY fill (net ${fmtInt(result.cut_fill?.net_cy)} CY)</span>
+        </p>
+        <div class="check-next">
+          <strong>What to check next:</strong> Get a topographic survey before final grading design. Confirm haul-off distance and disposal costs for excess material.
+        </div>
+      </div>
+
+      <!-- 2. Flood & Water -->
+      <div class="section">
+        <div class="section-header">
+          <h3>2. Flood &amp; Water</h3>
+          ${severityChip(floodLevel)}
+        </div>
+        <p class="explain">
+          <span class="means">${floodExplain}</span>
+          <br><span class="tech-value">FEMA Zone: ${floodZone}${floodBFE ? ` &nbsp;|&nbsp; BFE: ${fmtInt(floodBFE)} ft` : ''}</span>
+        </p>
+        <div class="check-next">
+          <strong>What to check next:</strong> ${floodLevel === 'HIGH'
+            ? 'Request a flood determination letter from a certified surveyor. Contact FEMA to confirm zone boundaries. Get flood insurance quotes before closing.'
+            : 'Verify drainage requirements with the local floodplain administrator. Confirm if a drainage report is required for your building permit.'
+          }
+        </div>
+      </div>
+
+      <!-- 3. Soil & Foundation -->
+      <div class="section">
+        <div class="section-header">
+          <h3>3. Soil &amp; Foundation</h3>
+          ${severityChip(soilLevel)}
+        </div>
+        <p class="explain">
+          <span class="means">${soilExplain}</span>
+          <br><span class="tech-value">Texture: ${result.soil?.texture_class || '\u2014'} &nbsp;|&nbsp; Shrink-swell: ${result.soil?.shrink_swell || '\u2014'} &nbsp;|&nbsp; USCS: ${result.soil?.uscs_estimate || '\u2014'} &nbsp;|&nbsp; Bearing: ${result.soil?.presumptive_bearing_psf ? result.soil.presumptive_bearing_psf + ' psf' : '\u2014'} &nbsp;|&nbsp; Foundation: <span style="text-transform:capitalize">${foundation}</span> (${codeRef})</span>
+        </p>
+        <div class="check-next">
+          <strong>What to check next:</strong> Order a geotechnical investigation (soil boring + lab testing, typically $2,000\u20134,000 for residential). This is the single most important investigation before finalizing your foundation design.
+        </div>
+      </div>
+
+      <!-- 4. Environmental Flags -->
+      <div class="section">
+        <div class="section-header">
+          <h3>4. Environmental Flags</h3>
+          ${severityChip(result.wetlands?.present || fireLevel === 'HIGH' ? 'HIGH' : (fireLevel === 'MODERATE' ? 'MODERATE' : 'LOW'))}
+        </div>
+        <p class="explain">
+          ${envFlags.map(f => `<span class="means"><strong>${f.flag}:</strong> ${f.text}</span>`).join('<br><br>')}
+        </p>
+        <div class="check-next">
+          <strong>What to check next:</strong> ${result.wetlands?.present
+            ? 'Contact USACE for a jurisdictional determination. Hire a wetland delineation specialist before site planning.'
+            : fireLevel === 'HIGH'
+              ? 'Consult your local fire marshal for WUI (Wildland-Urban Interface) requirements. Get quotes for fire-resistant siding and roofing.'
+              : 'Consider ordering a Phase I Environmental Site Assessment if commercial use is planned, or if the site has prior industrial history.'
+          }
+        </div>
+      </div>
+    </div>
+  `
+
+  // --- Page 3: Cost & What To Do Next ---
+  const breakdown = result.costs?.breakdown || {}
+  const projections = result.costs?.projections || {}
+
+  // Site prep breakdown rows
+  const siteBreakdownRows = Object.entries(breakdown).map(([k, v]) =>
+    `<tr><td style="text-transform:capitalize">${k.replace(/_/g, ' ')}</td><td style="text-align:right">${money(v)}</td></tr>`
+  ).join('')
+
+  // House concept data (if available)
+  const hasHouse = !!houseResult
+  const bestLayout = hasHouse && Array.isArray(houseResult.layouts) && houseResult.layouts.length > 0
+    ? houseResult.layouts.reduce((best, l) => (l.score >= (best.score || 0) ? l : best), houseResult.layouts[0])
+    : null
+  const houseCostLow = bestLayout?.cost?.range?.low ?? houseResult?.currentEstimate?.low
+  const houseCostHigh = bestLayout?.cost?.range?.high ?? houseResult?.currentEstimate?.high
+  const houseTotalSF = bestLayout?.totalSF ?? 0
+  const housePerSF = houseTotalSF > 0 && houseCostLow ? Math.round(((houseCostLow + (houseCostHigh || houseCostLow)) / 2) / houseTotalSF) : null
+  const houseQuality = (houseResult?.quality || 'mid').charAt(0).toUpperCase() + (houseResult?.quality || 'mid').slice(1)
+  const houseFoundCost = bestLayout?.cost?.foundation ?? null
+  const houseBuildCost = (houseCostLow && houseFoundCost) ? houseCostLow - houseFoundCost : houseCostLow
+
+  // Build Now or Wait — projection with site prep + construction columns
+  const inflationRate = 0.045
+  const sitePrepNow = totalNow || 0
+  const constructionNow = hasHouse && houseCostLow ? Math.round((houseCostLow + (houseCostHigh || houseCostLow)) / 2) : 0
+
+  function inflated(base, years) { return Math.round(base * Math.pow(1 + inflationRate, years)) }
+  function pctLabel(base, future) { return base ? `(+${(((future - base) / base) * 100).toFixed(1)}%)` : '' }
+
+  const timingRows = [
+    { label: 'Now', years: 0 },
+    { label: 'In 2 years', years: 2 },
+    { label: 'In 5 years', years: 5 },
+  ].map(t => {
+    const sp = inflated(sitePrepNow, t.years)
+    const con = constructionNow ? inflated(constructionNow, t.years) : null
+    const total = con ? sp + con : sp
+    return `<tr>
+      <td style="font-weight:600">${t.label}</td>
+      <td style="text-align:right">${money(sp)} ${t.years > 0 ? `<span style="color:#94a3b8;font-size:10px;">${pctLabel(sitePrepNow, sp)}</span>` : ''}</td>
+      ${constructionNow ? `<td style="text-align:right">${money(con)} ${t.years > 0 ? `<span style="color:#94a3b8;font-size:10px;">${pctLabel(constructionNow, con)}</span>` : ''}</td>` : ''}
+      <td style="text-align:right;font-weight:600">${money(total)} ${t.years > 0 ? `<span style="color:#94a3b8;font-size:10px;">${pctLabel(sitePrepNow + constructionNow, total)}</span>` : ''}</td>
+    </tr>`
+  }).join('')
+
+  const waitDiff5 = inflated(sitePrepNow + constructionNow, 5) - (sitePrepNow + constructionNow)
+  const waitConclusion = waitDiff5 > 0
+    ? `Construction costs are rising approximately 4.5% per year. Waiting 5 years adds roughly <strong>${money(waitDiff5)}</strong> to your total project cost. Building sooner is likely more cost-effective.`
+    : 'Market conditions are relatively stable. You have some flexibility in timing.'
+
+  // Context-aware next steps — only show what the analysis found relevant
+  const nextSteps = []
+  nextSteps.push({ step: 'Order a geotechnical investigation (soil boring)', who: 'Contact: local geotechnical engineering firm' })
+  nextSteps.push({ step: 'Get a topographic survey', who: 'Contact: licensed land surveyor' })
+  if (result.flood?.risk_level === 'HIGH') {
+    nextSteps.push({ step: 'Verify flood zone designation with a certified surveyor', who: 'Contact: licensed surveyor + local floodplain administrator' })
+  }
+  nextSteps.push({ step: 'Check utility availability with local provider', who: 'Contact: city/county utilities department' })
+  nextSteps.push({ step: 'Consult a licensed architect for concept development', who: 'Contact: AIA local chapter' })
+  if (result.soil?.shrink_swell === 'High' || result.soil?.expansive_risk === 'High' || result.slope?.avg_slope_pct > 8) {
+    nextSteps.push({ step: 'Engage a structural engineer for foundation design', who: 'Contact: local PE firm' })
+  }
+
+  const nextStepsHTML = nextSteps.map((s, i) =>
+    `<tr><td style="text-align:center;font-weight:700;color:#0369a1;width:28px;">${i + 1}</td><td><strong>${s.step}</strong><br><span style="font-size:10px;color:#64748b;">${s.who}</span></td></tr>`
+  ).join('')
+
+  const page3 = `
+    <div class="page page-break">
+      <h2>Cost &amp; What To Do Next</h2>
+
+      <div class="section">
+        <h3>What Will This Cost?</h3>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title">Site Preparation</div>
+            <table style="margin-bottom:0;">
+              <tbody>
+                ${siteBreakdownRows}
+                <tr style="font-weight:700;background:#f1f5f9"><td>Total Site Prep</td><td style="text-align:right">${money(totalNow)}</td></tr>
+              </tbody>
+            </table>
+            <p style="font-size:10px;color:#94a3b8;margin-top:6px;">This covers preparing the land only, not building the house.</p>
+          </div>
+          ${hasHouse ? `
+          <div class="card">
+            <div class="card-title">Total Construction</div>
+            <table style="margin-bottom:0;">
+              <tbody>
+                ${houseBuildCost ? `<tr><td>Building cost</td><td style="text-align:right">${money(houseBuildCost)}</td></tr>` : ''}
+                ${houseFoundCost ? `<tr><td>Foundation cost</td><td style="text-align:right">${money(houseFoundCost)}</td></tr>` : ''}
+                <tr style="font-weight:700;background:#f1f5f9"><td>Total Construction</td><td style="text-align:right">${money(houseCostLow)}${houseCostHigh && houseCostHigh !== houseCostLow ? ' &ndash; ' + money(houseCostHigh) : ''}</td></tr>
+                ${housePerSF ? `<tr><td>Rate</td><td style="text-align:right">$${housePerSF}/SF</td></tr>` : ''}
+              </tbody>
+            </table>
+            <p style="font-size:10px;color:#94a3b8;margin-top:6px;">Based on ${houseQuality} tier at ${houseResult?.location?.query || address || 'this location'} regional rates.</p>
+          </div>
+          ` : `
+          <div class="card" style="display:flex;align-items:center;justify-content:center;text-align:center;">
+            <div>
+              <div style="font-size:28px;margin-bottom:8px;">&#127968;</div>
+              <p style="font-size:12px;color:#64748b;">Run the <strong>House Concept</strong> tab<br>for building cost estimates.</p>
+            </div>
+          </div>
+          `}
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Build Now or Wait?</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th style="text-align:right">Site Prep</th>
+              ${constructionNow ? '<th style="text-align:right">Construction</th>' : ''}
+              <th style="text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${timingRows}</tbody>
+        </table>
+        <p class="explain" style="margin-top:8px;">${waitConclusion}</p>
+      </div>
+
+      <div class="section">
+        <h3>Your Next Steps</h3>
+        <table style="border:none;">
+          <tbody>${nextStepsHTML}</tbody>
+        </table>
+      </div>
+
+      <div class="disclaimer-box" style="font-size:10px;padding:10px 14px;">
+        <strong>Important Limitations.</strong> This report is for early planning only. It is not a permit application,
+        engineering design, or legal determination. All cost estimates are approximate ROM figures subject to
+        site-specific conditions, market fluctuations, and jurisdictional requirements. Verify all findings with
+        licensed professionals before making decisions.
+      </div>
+    </div>
+  `
+
+  // --- Page 4: Technical Appendix ---
+  const page4 = buildAppendixHTML(result, codeRef)
 
   // ── Page 5: House Concept (if available) ──
   const page5 = !houseResult ? '' : `
