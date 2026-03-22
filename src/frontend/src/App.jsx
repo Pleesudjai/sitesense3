@@ -290,13 +290,67 @@ export default function App() {
                       )}
 
                       {/* Site Design */}
-                      {result.ai_report.site_design && (
+                      {result.ai_report.site_design && (() => {
+                        // Parse rotation angle from orientation text
+                        const orientText = result.ai_report.site_design.orientation || ''
+                        let rotDeg = 0
+                        const match = orientText.match(/(\d+)[-–]?(\d+)?°?\s*(east|west)/i)
+                        if (match) {
+                          rotDeg = match[2] ? (parseInt(match[1]) + parseInt(match[2])) / 2 : parseInt(match[1])
+                          if (match[3]?.toLowerCase() === 'west') rotDeg = -rotDeg
+                        }
+                        const climate = result.ai_report.site_design.climate_zone || 'temperate'
+                        const climateLabel = { hot_arid: 'Hot & Arid', hot_humid: 'Hot & Humid', cold: 'Cold', temperate: 'Temperate' }[climate] || climate
+
+                        return (
                         <div className="bg-gray-700/30 rounded-lg p-3">
                           <h3 className="text-xs font-semibold text-teal mb-2">Where to Build on This Parcel</h3>
-                          <div className="space-y-2 text-xs">
-                            <div><span className="text-gray-500">Best pad location:</span> <span className="text-gray-300">{result.ai_report.site_design.recommended_pad}</span></div>
-                            <div><span className="text-gray-500">Building orientation:</span> <span className="text-gray-300">{result.ai_report.site_design.orientation}</span></div>
-                            <div className="text-gray-500 text-[10px] italic">{result.ai_report.site_design.orientation_reason}</div>
+
+                          {/* Orientation diagram */}
+                          <div className="flex gap-4 mb-3">
+                            <svg viewBox="0 0 160 160" className="w-36 h-36 shrink-0">
+                              {/* Compass circle */}
+                              <circle cx="80" cy="80" r="72" fill="none" stroke="#374151" strokeWidth="1" />
+                              {/* Compass labels */}
+                              <text x="80" y="14" textAnchor="middle" fill="#ef4444" fontSize="11" fontWeight="700">N</text>
+                              <text x="80" y="154" textAnchor="middle" fill="#6b7280" fontSize="10">S</text>
+                              <text x="10" y="83" textAnchor="middle" fill="#6b7280" fontSize="10">W</text>
+                              <text x="150" y="83" textAnchor="middle" fill="#6b7280" fontSize="10">E</text>
+                              {/* Sun arc (east to west through south) */}
+                              <path d="M 135,80 A 55,55 0 0,1 25,80" fill="none" stroke="#fbbf24" strokeWidth="1" strokeDasharray="3,2" opacity="0.4" />
+                              <text x="135" y="70" fill="#fbbf24" fontSize="7" opacity="0.6">sunrise</text>
+                              <text x="25" y="70" fill="#fbbf24" fontSize="7" opacity="0.6" textAnchor="end">sunset</text>
+                              {/* Building rectangle — rotated */}
+                              <g transform={`rotate(${rotDeg}, 80, 80)`}>
+                                <rect x="55" y="58" width="50" height="44" fill="#1a3d4d" stroke="#02C39A" strokeWidth="1.5" rx="2" />
+                                {/* Facade labels */}
+                                <text x="80" y="56" textAnchor="middle" fill="#60a5fa" fontSize="6">N</text>
+                                <text x="80" y="108" textAnchor="middle" fill="#f59e0b" fontSize="6">S</text>
+                                <text x="52" y="82" textAnchor="end" fill="#6b7280" fontSize="6">W</text>
+                                <text x="108" y="82" textAnchor="start" fill="#6b7280" fontSize="6">E</text>
+                                {/* Front door indicator (south facade) */}
+                                <rect x="73" y="100" width="14" height="4" fill="#02C39A" rx="1" opacity="0.6" />
+                                <text x="80" y="115" textAnchor="middle" fill="#02C39A" fontSize="5">entry</text>
+                              </g>
+                              {/* North arrow */}
+                              <polygon points="80,20 77,28 83,28" fill="#ef4444" />
+                            </svg>
+                            <div className="flex-1 space-y-1.5 text-xs">
+                              <div className="bg-gray-800/50 rounded px-2 py-1.5">
+                                <span className="text-gray-500">Orientation:</span>
+                                <span className="text-white font-medium ml-1">{result.ai_report.site_design.orientation}</span>
+                              </div>
+                              <div className="text-gray-500 text-[10px] italic leading-relaxed">{result.ai_report.site_design.orientation_reason}</div>
+                              <div className="bg-gray-800/50 rounded px-2 py-1.5">
+                                <span className="text-gray-500">Climate zone:</span>
+                                <span className="text-white font-medium ml-1">{climateLabel}</span>
+                              </div>
+                              <div className="bg-gray-800/50 rounded px-2 py-1.5">
+                                <span className="text-gray-500">Pad:</span>
+                                <span className="text-gray-300 ml-1">{result.ai_report.site_design.recommended_pad}</span>
+                              </div>
+                            </div>
+                          </div>
                             {result.ai_report.site_design.window_strategy?.length > 0 && (
                               <div>
                                 <span className="text-gray-500">Window strategy:</span>
@@ -316,7 +370,8 @@ export default function App() {
                             <div><span className="text-gray-500">Driveway:</span> <span className="text-gray-400">{result.ai_report.site_design.driveway_access}</span></div>
                           </div>
                         </div>
-                      )}
+                        )
+                      })()}
                     </>
                   ) : (
                     // Fallback: render as raw text (backward compatibility)
