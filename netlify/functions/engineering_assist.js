@@ -638,13 +638,18 @@ exports.handler = async (event) => {
     const rawText = message.content[0].text
 
     // ── Parse Claude response ──────────────────────────────────────────────
+    // Strip markdown code fences if present (```json ... ```)
+    let cleanText = rawText.trim()
+    if (cleanText.startsWith('```')) {
+      cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+    }
     let parsed
     try {
-      parsed = JSON.parse(rawText)
+      parsed = JSON.parse(cleanText)
     } catch {
       // Claude didn't return valid JSON — wrap raw text in expected structure
       parsed = {
-        answer: rawText,
+        answer: cleanText,
         sources: [],
         confidence: 'MEDIUM',
         disclaimer: FALLBACK_DISCLAIMER,
