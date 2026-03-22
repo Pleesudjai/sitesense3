@@ -29,17 +29,17 @@ export default function App() {
   const [houseResult, setHouseResult] = useState(null)
   const [forecastResult, setForecastResult] = useState(null)
 
-  // Derive location from drawn polygon centroid or site analysis result
-  const parcelLocation = result?.elevation?.center_lat
-    ? `${result.elevation.center_lat.toFixed(4)}, ${result.elevation.center_lon.toFixed(4)}`
-    : polygon?.coordinates?.[0]
+  // Use the search address text as location for all tabs
+  // Falls back to polygon centroid coordinates if no address typed
+  const parcelLocation = address.trim()
+    || (polygon?.coordinates?.[0]
       ? (() => {
           const pts = polygon.coordinates[0]
           const lat = pts.reduce((s, p) => s + p[1], 0) / pts.length
           const lon = pts.reduce((s, p) => s + p[0], 0) / pts.length
           return `${lat.toFixed(4)}, ${lon.toFixed(4)}`
         })()
-      : ''
+      : '')
   const parcelReady = !!polygon
 
   const handleSearch = () => {
@@ -52,6 +52,15 @@ export default function App() {
   const handleSearchError = (msg) => {
     setSearchError(msg)
     setTimeout(() => setSearchError(null), 4000)
+  }
+
+  const handlePolygonChange = (newPolygon) => {
+    setPolygon(newPolygon)
+    // Clear stale results when user redraws
+    setResult(null)
+    setHouseResult(null)
+    setForecastResult(null)
+    setError(null)
   }
 
   const handleAnalyze = async () => {
@@ -140,7 +149,7 @@ export default function App() {
         {/* Map — left 60% */}
         <div className="w-3/5 relative">
           <MapView
-            onPolygonChange={setPolygon}
+            onPolygonChange={handlePolygonChange}
             onSearchError={handleSearchError}
             result={result}
             searchAddress={address}
@@ -227,7 +236,7 @@ export default function App() {
 
       {/* ── Price Forecast tab ── */}
       <div className={`flex-1 overflow-y-auto ${activeTab !== 'forecast' ? 'hidden' : ''}`}>
-        <PriceForecastPanel address={parcelLocation || address} parcelReady={parcelReady} siteData={result} onResult={setForecastResult} />
+        <PriceForecastPanel address={parcelLocation || address} parcelReady={parcelReady} siteData={result} houseResult={houseResult} onResult={setForecastResult} />
       </div>
 
       {/* ── Engineering Q&A tab ── */}

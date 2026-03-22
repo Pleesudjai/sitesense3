@@ -63,25 +63,28 @@ const INDICATOR_EXPLAIN = {
   },
 }
 
-export default function PriceForecastPanel({ address, parcelReady, siteData, onResult }) {
-  const [bedrooms, setBedrooms]   = useState(2)
-  const [bathrooms, setBathrooms] = useState(2)
-  const [stories, setStories]     = useState(1)
-  const [totalSF, setTotalSF]     = useState(1250)
-  const [quality, setQuality]     = useState('mid')
+export default function PriceForecastPanel({ address, parcelReady, siteData, houseResult, onResult }) {
   const [loading, setLoading]     = useState(false)
   const [result, setResult]       = useState(null)
   const [error, setError]         = useState(null)
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  // Get parameters from House Concept result (recommended layout)
+  const bestLayout = houseResult?.layouts?.reduce((a, b) => (b.score >= a.score ? b : a), houseResult.layouts[0])
+  const hasHouseData = !!bestLayout
+
+  async function handleSubmit() {
+    if (!hasHouseData) return
     setLoading(true)
     setError(null)
     try {
       const params = {
-        bedrooms, bathrooms, stories, totalSF,
-        quality, location: address || 'Phoenix, AZ',
-        foundationType: siteData?.foundation?.type || 'CONVENTIONAL_SLAB',
+        bedrooms: houseResult.layouts[0]?.rooms?.filter(r => r.name?.includes('Bedroom')).length || 2,
+        bathrooms: houseResult.layouts[0]?.rooms?.filter(r => r.name?.includes('Bath')).length || 2,
+        stories: bestLayout.stories || 1,
+        totalSF: bestLayout.totalSF || 1250,
+        quality: houseResult.quality || 'mid',
+        location: address || 'Phoenix, AZ',
+        foundationType: houseResult.foundationType || siteData?.foundation?.type || 'CONVENTIONAL_SLAB',
       }
       const res = await predictPrice(params)
       setResult(res.data)
@@ -102,57 +105,29 @@ export default function PriceForecastPanel({ address, parcelReady, siteData, onR
         <p className="text-xs text-gray-400">Government-data-driven construction cost prediction for decision support</p>
       </div>
 
-      {/* ─── Form ─── */}
-      <form onSubmit={handleSubmit} className="bg-gray-900 rounded-lg p-4 space-y-3">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <label className="text-xs text-gray-400">
-            Bedrooms
-            <select value={bedrooms} onChange={e => setBedrooms(+e.target.value)}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
-              {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-gray-400">
-            Bathrooms
-            <select value={bathrooms} onChange={e => setBathrooms(+e.target.value)}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
-              {[1,2,3,4].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-gray-400">
-            Stories
-            <select value={stories} onChange={e => setStories(+e.target.value)}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
-              {[1,2].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-gray-400">
-            Total SF
-            <input type="number" value={totalSF} onChange={e => setTotalSF(+e.target.value)}
-              min={400} max={10000} step={50}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-teal" />
-          </label>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="text-xs text-gray-400">
-            Quality
-            <select value={quality} onChange={e => setQuality(e.target.value)}
-              className="mt-1 w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white">
-              {QUALITY_OPTIONS.map(q => <option key={q.value} value={q.value}>{q.label} — ${q.rate}/SF</option>)}
-            </select>
-          </label>
-          <div className="text-xs text-gray-400 flex items-end pb-1">
-            {parcelReady
-              ? <span>Parcel location: <span className="text-white font-medium">{address}</span></span>
-              : <span className="text-amber-400">Draw a rectangle on the Site Analysis map to set location</span>
-            }
+      {/* ─── Input summary from House Concept ─── */}
+      <div className="bg-gray-900 rounded-lg p-4 space-y-3">
+        {hasHouseData ? (
+          <>
+            <p className="text-xs text-gray-400">Using parameters from <span className="text-teal font-semibold">House Concept</span> — {bestLayout.name} layout</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="bg-gray-800 rounded p-2"><span className="text-gray-500">Layout</span><p className="text-white font-medium">{bestLayout.name} · {bestLayout.totalSF?.toLocaleString()} SF</p></div>
+              <div className="bg-gray-800 rounded p-2"><span className="text-gray-500">Quality</span><p className="text-white font-medium capitalize">{houseResult.quality || 'mid'}</p></div>
+              <div className="bg-gray-800 rounded p-2"><span className="text-gray-500">Foundation</span><p className="text-white font-medium">{(houseResult.foundationType || 'CONVENTIONAL_SLAB').replace(/_/g, ' ')}</p></div>
+              <div className="bg-gray-800 rounded p-2"><span className="text-gray-500">Location</span><p className="text-white font-medium">{address || '—'}</p></div>
+            </div>
+            <button onClick={handleSubmit} disabled={loading}
+              className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5 transition-colors">
+              {loading ? 'Forecasting...' : 'Run Price Forecast'}
+            </button>
+          </>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-400 text-sm">Generate a House Concept first</p>
+            <p className="text-gray-500 text-xs mt-1">Go to the <span className="text-teal">House Concept</span> tab to set bedrooms, bathrooms, stories, and quality. Price Forecast uses those parameters.</p>
           </div>
-        </div>
-        <button type="submit" disabled={loading || !parcelReady}
-          className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5 transition-colors">
-          {loading ? 'Forecasting...' : !parcelReady ? 'Draw a parcel on the Site Analysis map first' : 'Run Price Forecast'}
-        </button>
-      </form>
+        )}
+      </div>
 
       {error && (
         <div className="bg-red-950/50 border border-red-700/50 rounded-lg p-3 text-xs text-red-300">{error}</div>
