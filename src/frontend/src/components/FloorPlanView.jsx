@@ -576,12 +576,29 @@ function FloorPlan3D({ layout, siteDesign }) {
     ctx.fillText('N', Math.sin(nAngle) * (compLen + 12), -Math.cos(nAngle) * (compLen + 12) + 4)
     ctx.restore()
 
+    // Front facade label + entry indicator
+    if (siteDesign?.orientation_degrees != null) {
+      const edges = getEdgeLabels(siteDesign.orientation_degrees)
+      // Draw "FRONT" label on the south side of the 3D model (y=footH)
+      const frontMid = proj(footW / 2, footH, 0)
+      ctx.fillStyle = '#02C39A'
+      ctx.font = 'bold 10px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${edges.front} · ENTRY`, frontMid.x, frontMid.y + 14)
+
+      // "Best daylight" label on the front top edge
+      const topMid = proj(footW / 2, 0, allRects.length > 0 ? Math.max(...floors.map(f => f.floor)) * 12 : 12)
+      ctx.fillStyle = '#fbbf24'
+      ctx.font = '9px sans-serif'
+      ctx.fillText(`${edges.front} facade · best daylight`, topMid.x, topMid.y - 8)
+    }
+
     // Hints
     ctx.fillStyle = 'rgba(156,163,175,0.4)'
     ctx.font = '9px sans-serif'
     ctx.textAlign = 'right'
     ctx.fillText('Drag to rotate · Scroll to zoom', W - 8, H - 6)
-  }, [allRects, footW, footH, rotation, zoom3d])
+  }, [allRects, footW, footH, rotation, zoom3d, siteDesign])
 
   useEffect(() => { draw() }, [draw])
 
