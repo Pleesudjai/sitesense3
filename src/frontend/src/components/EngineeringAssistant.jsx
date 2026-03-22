@@ -28,7 +28,6 @@ const SOURCE_STYLES = {
 
 export default function EngineeringAssistant({ siteData, address }) {
   const [question, setQuestion]       = useState('')
-  const [useSiteData, setUseSiteData] = useState(false)
   const [loading, setLoading]         = useState(false)
   const [conversations, setConversations] = useState([])
   const [error, setError]             = useState(null)
@@ -39,7 +38,7 @@ export default function EngineeringAssistant({ siteData, address }) {
     setLoading(true)
     setError(null)
     try {
-      const context = useSiteData && siteData ? { ...siteData, address } : (address ? { address } : null)
+      const context = siteData ? { ...siteData, address } : (address ? { address } : null)
       const res = await askEngineering(question, context)
       setConversations(prev => [{ q: question, ...res.data }, ...prev])
       setQuestion('')
@@ -73,18 +72,6 @@ export default function EngineeringAssistant({ siteData, address }) {
       </div>
 
       {/* Site data toggle */}
-      {siteData && (
-        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={useSiteData}
-            onChange={e => setUseSiteData(e.target.checked)}
-            className="accent-teal-500"
-          />
-          Include site analysis data for grounded answers
-        </label>
-      )}
-
       {/* Input */}
       <form onSubmit={handleAsk} className="flex gap-2">
         <input

@@ -2,6 +2,9 @@
  * Netlify Function: /api/engineering-assist
  * Engineering Knowledge RAG assistant — answers code/design questions
  * with source citations and optional site context integration.
+ *
+ * Brain architecture: rule-based fallback when no API key is available,
+ * Claude-powered deep analysis when key is present.
  */
 
 const Anthropic = require('@anthropic-ai/sdk')
@@ -111,11 +114,349 @@ function corsHeaders() {
   }
 }
 
+// ─── FALLBACK DISCLAIMER ─────────────────────────────────────────────────────
+
+const FALLBACK_DISCLAIMER =
+  'This guidance is educational only. All design decisions must be reviewed ' +
+  'and approved by a licensed professional engineer. This is not a substitute ' +
+  'for site-specific geotechnical investigation or stamped engineering.'
+
+// ─── FORMAT SITE CONTEXT ─────────────────────────────────────────────────────
+
+function formatSiteContext(ctx) {
+  if (!ctx) return 'No site data available.'
+  const lines = []
+  if (ctx.address) lines.push(`Location: ${ctx.address}`)
+  if (ctx.soil) lines.push(`Soil: ${ctx.soil.texture_description || ctx.soil.texture_class || ctx.soil.texture || 'Unknown'}, shrink-swell: ${ctx.soil.shrink_swell || ctx.soil.shrinkSwell || 'Unknown'}, bearing: ${ctx.soil.presumptive_bearing_psf || 'Unknown'} psf`)
+  if (ctx.flood) lines.push(`Flood: Zone ${ctx.flood.zone}`)
+  if (ctx.seismic) lines.push(`Seismic: SDC ${ctx.seismic.sdc || ctx.seismic.seismic_sdc || 'Unknown'}, SDS=${ctx.seismic.sds || 'Unknown'}`)
+  if (ctx.slope) lines.push(`Slope: ${ctx.slope.avg_slope_pct || 'Unknown'}% avg`)
+  if (ctx.foundation) lines.push(`Foundation: ${(ctx.foundation.type || '').replace(/_/g, ' ')}`)
+  return lines.join('\n') || 'No site data available.'
+}
+
+// ─── RULE-BASED ANSWER BUILDERS ──────────────────────────────────────────────
+
+function buildFoundationAnswer(ctx) {
+  let answer = '[LICENSED] Foundation selection depends on soil conditions, flood zone, slope, and seismic design category.\n\n'
+  answer += 'IBC 2021 Table 1806.2 Presumptive Bearing Capacity:\n'
+  answer += '\u2022 GP/GW (Gravel): 4,000 psf \u2192 Conventional slab\n'
+  answer += '\u2022 SP/SW (Sand): 3,000 psf \u2192 Conventional slab\n'
+  answer += '\u2022 SM (Sandy loam): 2,000 psf \u2192 Conventional slab\n'
+  answer += '\u2022 CL (Clay): 1,500 psf \u2192 PT slab if expansive (ACI 360R-10 \u00A75.4)\n'
+  answer += '\u2022 CH (Fat clay): 1,000 psf \u2192 PT slab or deep foundation\n'
+  answer += '\u2022 PT/OH (Organic): Not suitable \u2192 Deep piles required (IBC \u00A71803.5.5)\n\n'
+
+  if (ctx?.soil) {
+    const tex = ctx.soil.texture_description || ctx.soil.texture_class || ctx.soil.texture || 'Unknown'
+    const sw = ctx.soil.shrink_swell || ctx.soil.shrinkSwell || 'Unknown'
+    const bearing = ctx.soil.presumptive_bearing_psf || 'Unknown'
+    const caliche = ctx.soil.caliche
+    answer += `Your site: ${tex}\n`
+    answer += `Shrink-swell: ${sw}\n`
+    answer += `Bearing: ${bearing} psf\n`
+    answer += `Caliche: ${caliche ? 'Detected \u2014 grade beams recommended (ACI 360R-10 \u00A74.2)' : 'Not detected'}\n\n`
+  }
+
+  answer += 'Foundation priority ladder:\n'
+  answer += '1. Organic soil \u2192 Deep pile (IBC \u00A71803.5.5)\n'
+  answer += '2. Flood zone AE/VE \u2192 Elevated/pile (ASCE 7-22 Ch.5)\n'
+  answer += '3. Slope > 30% \u2192 Drilled caisson\n'
+  answer += '4. Expansive soil (PI > 25) \u2192 PT slab (ACI 360R-10 \u00A75.4)\n'
+  answer += '5. Caliche \u2192 Grade beams on piers (ACI 360R-10 \u00A74.2)\n'
+  answer += '6. Standard \u2192 Conventional slab-on-ground\n\n'
+  answer += '[LICENSED] All foundation decisions require a geotechnical investigation (soil boring + lab testing) before design. Screening-level soil data is not sufficient for structural design.'
+
+  return answer
+}
+
+function buildSeismicAnswer(ctx) {
+  let answer = '[LICENSED] Seismic design is governed by ASCE 7-22 Chapter 12 and IBC 2021 Chapter 16.\n\n'
+  answer += 'Seismic Design Category (SDC) determination per ASCE 7-22 Tables 11.6-1 / 11.6-2:\n'
+  answer += '\u2022 SDC A: SDS < 0.167 and SD1 < 0.067 \u2014 Minimal seismic risk\n'
+  answer += '\u2022 SDC B: 0.167 \u2264 SDS < 0.33 or 0.067 \u2264 SD1 < 0.133 \u2014 Low seismic risk\n'
+  answer += '\u2022 SDC C: 0.33 \u2264 SDS < 0.50 or 0.133 \u2264 SD1 < 0.20 \u2014 Moderate seismic risk\n'
+  answer += '\u2022 SDC D: SDS \u2265 0.50 or SD1 \u2265 0.20 \u2014 High seismic risk\n'
+  answer += '\u2022 SDC E/F: Near major fault + Risk Cat IV \u2014 Very high seismic risk\n\n'
+
+  if (ctx?.seismic) {
+    const sdc = ctx.seismic.sdc || ctx.seismic.seismic_sdc || 'Unknown'
+    const sds = ctx.seismic.sds || 'Unknown'
+    const sd1 = ctx.seismic.sd1 || 'Unknown'
+    answer += `[CALCULATED] Your site seismic parameters:\n`
+    answer += `SDS = ${sds}, SD1 = ${sd1}\n`
+    answer += `Seismic Design Category: ${sdc}\n\n`
+
+    if (sdc === 'D' || sdc === 'E' || sdc === 'F') {
+      answer += 'HIGH SEISMIC ZONE \u2014 Key requirements:\n'
+      answer += '\u2022 Special moment frames or shear walls required (ASCE 7-22 Table 12.2-1)\n'
+      answer += '\u2022 Continuous load path from roof to foundation\n'
+      answer += '\u2022 Ductile detailing per ACI 318-19 Ch.18\n'
+      answer += '\u2022 Foundation ties required (ASCE 7-22 \u00A712.13.8.2)\n\n'
+    } else if (sdc === 'C') {
+      answer += 'MODERATE SEISMIC ZONE \u2014 Key requirements:\n'
+      answer += '\u2022 Intermediate moment frames or ordinary shear walls acceptable\n'
+      answer += '\u2022 Seismic detailing required for connections\n\n'
+    } else {
+      answer += 'LOW SEISMIC ZONE \u2014 Standard construction methods generally acceptable.\n\n'
+    }
+  }
+
+  answer += 'Regional notes:\n'
+  answer += '\u2022 California/Pacific NW: SDC D common (Cascadia subduction zone)\n'
+  answer += '\u2022 Arizona (Phoenix): SDC B typical, SDS ~ 0.18-0.25\n'
+  answer += '\u2022 Arizona (Flagstaff): SDC B-C, slightly higher due to northern AZ faults\n'
+  answer += '\u2022 Central US (New Madrid zone): SDC C-D possible\n\n'
+  answer += '[LICENSED] Site-specific seismic hazard analysis may be required for SDC D+ or near-fault sites. Consult a licensed structural engineer.'
+
+  return answer
+}
+
+function buildFloodAnswer(ctx) {
+  let answer = '[PUBLIC] Flood risk is mapped by FEMA National Flood Hazard Layer (NFHL) and regulated under ASCE 7-22 Chapter 5 and IBC 2021 \u00A71612.\n\n'
+  answer += 'FEMA Flood Zone Classifications:\n'
+  answer += '\u2022 Zone X (Unshaded): Minimal flood risk \u2014 No special requirements\n'
+  answer += '\u2022 Zone X (Shaded / 500-yr): Moderate risk \u2014 Flood insurance recommended\n'
+  answer += '\u2022 Zone AE: 1% annual chance (100-yr) floodplain \u2014 BFE established\n'
+  answer += '\u2022 Zone A: 100-yr floodplain, no BFE \u2014 Requires flood study\n'
+  answer += '\u2022 Zone VE: Coastal high-hazard \u2014 Wave action + surge\n'
+  answer += '\u2022 Zone AO: Sheet flow areas \u2014 Depth specified on map\n\n'
+
+  if (ctx?.flood) {
+    const zone = ctx.flood.zone || 'Unknown'
+    answer += `[CALCULATED] Your site flood zone: ${zone}\n\n`
+
+    if (zone === 'AE' || zone === 'A' || zone === 'AH' || zone === 'AO') {
+      answer += 'SPECIAL FLOOD HAZARD AREA \u2014 Requirements:\n'
+      answer += '\u2022 Lowest floor must be at or above Base Flood Elevation (BFE) (IBC \u00A71612.4)\n'
+      answer += '\u2022 Flood-resistant materials below BFE (FEMA TB-2)\n'
+      answer += '\u2022 Flood openings required in enclosures below BFE (IBC \u00A71612.5)\n'
+      answer += '\u2022 NFIP flood insurance required for federally-backed mortgages\n'
+      answer += '\u2022 Foundation: elevated/pile recommended (ASCE 7-22 Ch.5)\n\n'
+    } else if (zone === 'VE' || zone === 'V') {
+      answer += 'COASTAL HIGH-HAZARD ZONE \u2014 Requirements:\n'
+      answer += '\u2022 Structure must be on piles or columns (FEMA P-55)\n'
+      answer += '\u2022 Bottom of lowest structural member above BFE (ASCE 7-22 \u00A75.4)\n'
+      answer += '\u2022 Breakaway walls below BFE only\n'
+      answer += '\u2022 No fill permitted for structural support\n\n'
+    } else {
+      answer += 'Outside mapped special flood hazard area. Standard construction permitted.\n\n'
+    }
+  }
+
+  answer += 'Arizona-specific notes:\n'
+  answer += '\u2022 Ephemeral washes may NOT be mapped by FEMA \u2014 check local floodplain authority (ADWR)\n'
+  answer += '\u2022 Flash flood risk is significant even in Zone X areas\n'
+  answer += '\u2022 Water adequacy certificate may be required (ARS \u00A79-463.06)\n\n'
+  answer += '[PUBLIC] Always verify flood zone with the local floodplain administrator. FEMA maps are updated periodically and may not reflect current conditions.'
+
+  return answer
+}
+
+function buildSoilAnswer(ctx) {
+  let answer = '[PUBLIC] Soil data is sourced from USDA SSURGO (Soil Survey Geographic Database) and governs foundation design per IBC 2021 \u00A71803.\n\n'
+  answer += 'Key soil properties for construction:\n'
+  answer += '\u2022 Texture class: Determines bearing capacity (IBC Table 1806.2)\n'
+  answer += '\u2022 Shrink-swell potential: Drives foundation type (ACI 360R-10 \u00A75.4)\n'
+  answer += '\u2022 Plasticity Index (PI): PI > 25 = expansive \u2192 PT slab required\n'
+  answer += '\u2022 Organic content: Organic soils cannot support shallow foundations\n'
+  answer += '\u2022 Depth to bedrock: Affects excavation cost and foundation depth\n'
+  answer += '\u2022 Water table depth: Shallow = dewatering needed during construction\n\n'
+
+  if (ctx?.soil) {
+    const tex = ctx.soil.texture_description || ctx.soil.texture_class || ctx.soil.texture || 'Unknown'
+    const sw = ctx.soil.shrink_swell || ctx.soil.shrinkSwell || 'Unknown'
+    const bearing = ctx.soil.presumptive_bearing_psf || 'Unknown'
+    const caliche = ctx.soil.caliche
+    answer += `[CALCULATED] Your site soil data:\n`
+    answer += `Texture: ${tex}\n`
+    answer += `Shrink-swell potential: ${sw}\n`
+    answer += `Presumptive bearing: ${bearing} psf\n`
+
+    if (caliche && caliche !== 'none' && caliche !== 'unknown') {
+      answer += `Caliche: Detected \u2014 [LICENSED] Grade beams on piers recommended (ACI 360R-10 \u00A74.2). Additional cost: $3-8/SF for caliche removal or drilling through.\n`
+    } else {
+      answer += `Caliche: Not detected\n`
+    }
+
+    if (sw === 'High') {
+      answer += `\n[LICENSED] HIGH SHRINK-SWELL: Post-tensioned slab recommended (ACI 360R-10 \u00A75.4). Conventional slab-on-ground is NOT recommended for expansive soils.\n`
+    }
+    answer += '\n'
+  }
+
+  answer += 'IBC 2021 \u00A71803 Requirements:\n'
+  answer += '\u2022 Geotechnical investigation required for SDC C+ (IBC \u00A71803.5.11)\n'
+  answer += '\u2022 Soil classification per ASTM D2487 (Unified Soil Classification)\n'
+  answer += '\u2022 Minimum 2 borings for residential, 4+ for commercial\n'
+  answer += '\u2022 Boring depth: minimum 1.5x footing width below bearing elevation\n\n'
+  answer += '[LICENSED] SSURGO data is screening-level only. A site-specific geotechnical investigation (soil boring + lab testing) is required before design.'
+
+  return answer
+}
+
+function buildWindAnswer(ctx) {
+  let answer = '[LICENSED] Wind loads are determined per ASCE 7-22 Chapters 26-27 based on basic wind speed, exposure category, and building geometry.\n\n'
+  answer += 'ASCE 7-22 Basic Wind Speed (V_ult, Risk Category II):\n'
+  answer += '\u2022 Most inland US: 95-115 mph\n'
+  answer += '\u2022 Arizona (Phoenix/Tucson): 90-95 mph\n'
+  answer += '\u2022 Arizona (Flagstaff): 100 mph\n'
+  answer += '\u2022 Gulf Coast (TX/LA): 130-150 mph\n'
+  answer += '\u2022 Florida (South): 150-170 mph\n'
+  answer += '\u2022 Atlantic Coast: 110-150 mph\n'
+  answer += '\u2022 Tornado-prone (OK/KS): 100-115 mph (standard), ICC 500 for safe rooms\n\n'
+
+  if (ctx?.seismic?.windMph) {
+    answer += `[CALCULATED] Your site design wind speed: ${ctx.seismic.windMph} mph\n\n`
+
+    if (ctx.seismic.windMph >= 130) {
+      answer += 'HIGH WIND ZONE \u2014 Key requirements:\n'
+      answer += '\u2022 Impact-resistant glazing or shutters (ASCE 7-22 \u00A726.12.3)\n'
+      answer += '\u2022 Enhanced roof-to-wall connections (hurricane clips/straps)\n'
+      answer += '\u2022 Pressure-rated garage doors\n'
+      answer += '\u2022 Continuous load path from roof to foundation\n\n'
+    } else if (ctx.seismic.windMph >= 110) {
+      answer += 'MODERATE-HIGH WIND ZONE \u2014 Enhanced connections recommended.\n\n'
+    } else {
+      answer += 'STANDARD WIND ZONE \u2014 Conventional construction methods generally acceptable.\n\n'
+    }
+  }
+
+  answer += 'Exposure categories (ASCE 7-22 \u00A726.7):\n'
+  answer += '\u2022 B: Urban/suburban areas with obstructions\n'
+  answer += '\u2022 C: Open terrain with scattered obstructions (most common)\n'
+  answer += '\u2022 D: Flat, unobstructed coastal areas\n\n'
+  answer += 'Arizona-specific:\n'
+  answer += '\u2022 Dust storm / haboob loading is not covered by ASCE 7 \u2014 local practice\n'
+  answer += '\u2022 WUI fire zones may require ignition-resistant construction (ASCE 7 Ch.27 + local)\n\n'
+  answer += '[LICENSED] Wind load calculations require building-specific geometry. Consult a licensed structural engineer for final design.'
+
+  return answer
+}
+
+function buildCostAnswer(ctx) {
+  let answer = '[PUBLIC] Construction cost estimates are based on Census CHARS 2023 benchmarks and regional price parities (BEA RPP).\n\n'
+  answer += 'National average construction cost (2024, new single-family residential):\n'
+  answer += '\u2022 Standard finish: $150-200/SF\n'
+  answer += '\u2022 Mid-range finish: $200-300/SF\n'
+  answer += '\u2022 High-end finish: $300-500/SF\n\n'
+  answer += 'Regional cost multipliers (vs. national average):\n'
+  answer += '\u2022 Phoenix, AZ: 0.95x \u2014 Below average\n'
+  answer += '\u2022 Tucson, AZ: 0.88x \u2014 Below average\n'
+  answer += '\u2022 Flagstaff, AZ: 1.05x \u2014 Slightly above (altitude, logistics)\n'
+  answer += '\u2022 Houston, TX: 0.92x \u2014 Below average\n'
+  answer += '\u2022 Los Angeles, CA: 1.25x \u2014 Above average\n'
+  answer += '\u2022 New York, NY: 1.45x \u2014 Well above average\n'
+  answer += '\u2022 Denver, CO: 1.05x \u2014 Slightly above\n\n'
+
+  answer += 'Common cost adders:\n'
+  answer += '\u2022 PT slab (expansive soil): +$3-6/SF over conventional\n'
+  answer += '\u2022 Caliche removal/drilling: +$3-8/SF\n'
+  answer += '\u2022 Deep pile foundation: +$8-15/SF\n'
+  answer += '\u2022 Flood zone elevation: +$10-25/SF\n'
+  answer += '\u2022 Steep slope (>15%): +$5-15/SF for grading\n'
+  answer += '\u2022 Seismic SDC D+: +$2-5/SF for ductile detailing\n'
+  answer += '\u2022 Hurricane zone (130+ mph): +$3-8/SF for enhanced envelope\n\n'
+
+  answer += 'Cost projection (ENR CCI inflation rate ~4.5%/yr):\n'
+
+  if (ctx?.cost) {
+    const base = ctx.cost.total || ctx.cost.base_cost || 0
+    if (base > 0) {
+      const yr2 = Math.round(base * Math.pow(1.045, 2))
+      const yr5 = Math.round(base * Math.pow(1.045, 5))
+      const yr10 = Math.round(base * Math.pow(1.045, 10))
+      answer += `[CALCULATED] Based on your site estimate ($${base.toLocaleString()}):\n`
+      answer += `\u2022 Now: $${base.toLocaleString()}\n`
+      answer += `\u2022 2-year: $${yr2.toLocaleString()}\n`
+      answer += `\u2022 5-year: $${yr5.toLocaleString()}\n`
+      answer += `\u2022 10-year: $${yr10.toLocaleString()}\n\n`
+    }
+  }
+
+  answer += 'Arizona heat season note: Construction during May-September adds 20-30% labor cost due to heat restrictions, mandatory breaks, and reduced productivity. Optimal build window is October-April.\n\n'
+  answer += '[PUBLIC] These are screening-level estimates only. Obtain competitive bids from licensed general contractors for accurate project costing.'
+
+  return answer
+}
+
+// ─── RULE-BASED FALLBACK ─────────────────────────────────────────────────────
+
+function answerWithRules(question, siteContext) {
+  const q = question.toLowerCase()
+  const answer = { answer: '', sources: [], confidence: 'MEDIUM', disclaimer: FALLBACK_DISCLAIMER }
+
+  // Foundation questions
+  if (q.includes('foundation') || q.includes('slab') || q.includes('footing')) {
+    answer.answer = buildFoundationAnswer(siteContext)
+    answer.sources = [
+      { type: 'LICENSED', reference: 'IBC 2021 \u00A71806.2', description: 'Presumptive bearing capacity' },
+      { type: 'LICENSED', reference: 'ACI 360R-10 \u00A75.4', description: 'PT slab for expansive soils' },
+    ]
+  }
+  // Seismic questions
+  else if (q.includes('seismic') || q.includes('earthquake') || q.includes('sdc')) {
+    answer.answer = buildSeismicAnswer(siteContext)
+    answer.sources = [
+      { type: 'LICENSED', reference: 'ASCE 7-22 Ch.12', description: 'Seismic design requirements' },
+      { type: 'LICENSED', reference: 'ASCE 7-22 Tables 11.6-1/11.6-2', description: 'SDC determination' },
+    ]
+  }
+  // Flood questions
+  else if (q.includes('flood') || q.includes('fema') || q.includes('floodplain')) {
+    answer.answer = buildFloodAnswer(siteContext)
+    answer.sources = [
+      { type: 'PUBLIC', reference: 'FEMA NFHL', description: 'National Flood Hazard Layer' },
+      { type: 'LICENSED', reference: 'ASCE 7-22 Ch.5', description: 'Flood load requirements' },
+    ]
+  }
+  // Soil questions
+  else if (q.includes('soil') || q.includes('clay') || q.includes('expansive') || q.includes('bearing') || q.includes('caliche')) {
+    answer.answer = buildSoilAnswer(siteContext)
+    answer.sources = [
+      { type: 'PUBLIC', reference: 'USDA SSURGO', description: 'Soil survey data' },
+      { type: 'LICENSED', reference: 'IBC 2021 \u00A71803', description: 'Soil investigation requirements' },
+    ]
+  }
+  // Wind questions
+  else if (q.includes('wind') || q.includes('hurricane') || q.includes('tornado')) {
+    answer.answer = buildWindAnswer(siteContext)
+    answer.sources = [
+      { type: 'LICENSED', reference: 'ASCE 7-22 Ch.26-27', description: 'Wind load provisions' },
+    ]
+  }
+  // Cost questions
+  else if (q.includes('cost') || q.includes('price') || q.includes('budget') || q.includes('estimate')) {
+    answer.answer = buildCostAnswer(siteContext)
+    answer.sources = [
+      { type: 'PUBLIC', reference: 'Census CHARS 2023', description: 'New housing cost benchmarks' },
+      { type: 'PUBLIC', reference: 'BEA RPP', description: 'Regional price parities' },
+    ]
+  }
+  // General / unknown
+  else {
+    answer.answer = `This question requires AI-powered analysis which is not available without an API key. However, here is what the site data tells us:\n\n${formatSiteContext(siteContext)}\n\nFor detailed engineering guidance, consult a licensed professional engineer (PE) in your area.`
+    answer.confidence = 'LOW'
+  }
+
+  return answer
+}
+
 // ─── SYSTEM PROMPT ───────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are an expert civil/structural engineering assistant for SiteSense, specializing in US building codes and regional construction practices.
 
 ROLE: Help engineers and landowners understand site conditions, code requirements, and design considerations. You provide educational guidance grounded in public standards.
+
+BOUNDARIES — you MUST follow these:
+1. You are a screening-level advisor, NOT a licensed engineer
+2. Never provide final structural sizing, member dimensions, or stamped calculations
+3. Never claim code compliance — only explain code requirements
+4. Always recommend professional verification for design decisions
+5. If the question is outside civil/structural engineering, say so clearly
+6. Never provide legal advice about permits, zoning appeals, or liability
+7. If site data is provided, ground your answer in that specific data
+8. If no site data, give general guidance and note the limitation
 
 REFERENCE CODES (cite by section number):
 - IBC 2021: Ch.16 Structural Design, §1803 Soils & Foundations, §1806 Presumptive Bearing (Table 1806.2), §1808 Foundations, §1612 Flood
@@ -192,13 +533,6 @@ OUTPUT FORMAT — respond with ONLY valid JSON:
   "disclaimer": "This guidance is educational only. All design decisions must be reviewed and approved by a licensed professional engineer. This is not a substitute for site-specific geotechnical investigation or stamped engineering."
 }`
 
-// ─── FALLBACK DISCLAIMER ─────────────────────────────────────────────────────
-
-const FALLBACK_DISCLAIMER =
-  'This guidance is educational only. All design decisions must be reviewed ' +
-  'and approved by a licensed professional engineer. This is not a substitute ' +
-  'for site-specific geotechnical investigation or stamped engineering.'
-
 // ─── HANDLER ─────────────────────────────────────────────────────────────────
 
 exports.handler = async (event) => {
@@ -213,21 +547,6 @@ exports.handler = async (event) => {
       statusCode: 405,
       headers: corsHeaders(),
       body: JSON.stringify({ status: 'error', message: 'Method not allowed' }),
-    }
-  }
-
-  // ── Check API key ──────────────────────────────────────────────────────────
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return {
-      statusCode: 503,
-      headers: corsHeaders(),
-      body: JSON.stringify({
-        status: 'error',
-        message:
-          'AI assistant is unavailable — ANTHROPIC_API_KEY is not configured. ' +
-          'Please set it in Netlify dashboard → Site settings → Environment variables.',
-      }),
     }
   }
 
@@ -249,6 +568,7 @@ exports.handler = async (event) => {
 
     // ── Auto-fetch GIS if address provided but no full site data ────────
     let gisContext = ''
+    let enrichedContext = context || {}
     const address = context?.address
     if (address && !context?.soil) {
       const geo = await geocodeLocation(address)
@@ -262,6 +582,27 @@ exports.handler = async (event) => {
           `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
           `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
           `\nFlood: Zone ${flood.zone}`
+
+        // Enrich context for rule-based fallback
+        enrichedContext = {
+          ...enrichedContext,
+          address,
+          soil: { texture: soil.texture, shrinkSwell: soil.shrinkSwell, caliche: soil.caliche },
+          seismic: { sds: seismic.sds, sd1: seismic.sd1, sdc: seismic.sdc, windMph: seismic.windMph },
+          flood: { zone: flood.zone },
+        }
+      }
+    }
+
+    // ── Check API key ──────────────────────────────────────────────────────
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      // Rule-based answer without LLM
+      const ruleAnswer = answerWithRules(question, enrichedContext)
+      return {
+        statusCode: 200,
+        headers: corsHeaders(),
+        body: JSON.stringify({ status: 'ok', data: ruleAnswer }),
       }
     }
 
