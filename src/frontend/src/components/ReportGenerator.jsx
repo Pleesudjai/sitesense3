@@ -1077,7 +1077,6 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
           <p style="font-size:10px;color:#94a3b8;margin:0;">Source: ${ind.source}</p>
         </div>
       `).join('') : ''}
-      ` : ''}
 
       ${forecastResult.sources ? `
         <h2 style="font-size:13px;">Government Data Sources</h2>
