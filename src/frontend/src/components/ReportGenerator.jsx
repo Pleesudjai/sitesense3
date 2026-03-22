@@ -1305,54 +1305,13 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
 </html>`
 }
 
-export async function generateReport(result, address, polygon, houseResult, forecastResult) {
+export function generateReport(result, address, polygon, houseResult, forecastResult) {
   const html = buildReportHTML(result, address, houseResult, forecastResult)
-
-  // Extract CSS and body content separately
-  const cssMatch = html.match(/<style>([\s\S]*?)<\/style>/i)
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i)
-
-  // Build a visible container with embedded styles (html2canvas needs on-screen content)
-  const container = document.createElement('div')
-  if (cssMatch) {
-    const styleEl = document.createElement('style')
-    styleEl.textContent = cssMatch[1]
-    container.appendChild(styleEl)
+  const win = window.open('', '_blank')
+  if (!win) {
+    alert('Pop-up blocked. Please allow pop-ups for this site and try again.')
+    return
   }
-  const content = document.createElement('div')
-  content.innerHTML = bodyMatch ? bodyMatch[1] : html
-  container.appendChild(content)
-
-  // Position on-screen but behind everything (html2canvas can't capture off-screen)
-  container.style.position = 'fixed'
-  container.style.top = '0'
-  container.style.left = '0'
-  container.style.width = '8.5in'
-  container.style.zIndex = '-9999'
-  container.style.background = '#fff'
-  container.style.opacity = '0.01'
-  document.body.appendChild(container)
-
-  // Give browser time to render before capturing
-  await new Promise(r => setTimeout(r, 300))
-
-  try {
-    const html2pdf = (await import('html2pdf.js')).default
-    const filename = `SiteSense_Report_${(address || 'Parcel').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)}.pdf`
-    await html2pdf().set({
-      margin: [0.3, 0.3, 0.5, 0.3],
-      filename,
-      image: { type: 'jpeg', quality: 0.92 },
-      html2canvas: { scale: 1.5, useCORS: true, letterRendering: true, scrollY: 0 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] },
-    }).from(content).save()
-  } catch (e) {
-    console.error('PDF generation failed, opening HTML fallback:', e)
-    const win = window.open('', '_blank')
-    if (win) { win.document.write(html); win.document.close() }
-    else alert('Could not generate PDF. Please try again.')
-  } finally {
-    document.body.removeChild(container)
-  }
+  win.document.write(html)
+  win.document.close()
 }
