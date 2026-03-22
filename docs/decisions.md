@@ -207,3 +207,25 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Files changed:** analyze.js (brain prompt + site design + rule-based fallback), house_estimate.js (structured brain output), App.jsx (structured AI renderer + site design section), HouseConceptPanel.jsx (structured AI output), ReportGenerator.jsx (4-page redesign + forecast explanations), PriceForecastPanel.jsx (Build Now or Wait framing), FloorPlanView.jsx (font scaling + 3D compass)
 
 **Next:** Test with new Netlify account, set ANTHROPIC_API_KEY to compare rule-based vs Claude output, demo prep
+
+---
+
+## 2026-03-22 — Evidence Pack Architecture + Data-Driven Site Design + Confidence Tracking
+
+**What was built:**
+
+1. **Evidence Pack Architecture (evidence-pack-ai-report-architecture spec):** Refactored the brain pipeline from flat `summary` → structured `evidence_pack`. The evidence pack is the brain's working memory, containing: `parcel` (address, area, centroid), `retrieval` (14 GIS layers each with source, query_mode, confidence level, notes), `computed` (slope stats, cut/fill, foundation reasoning, loads, runoff, costs, buildable area %), `doctrine` (codes applied, triggered rules, foundation ladder), `assumptions` (explicit fallback notes), `unknowns` (verification gaps), `provenance` (timestamp, engine, layer count), `confidence` (per-section: verified/partially_verified/heuristic/fallback). Claude receives the full evidence pack instead of a flattened summary. Rule-based fallback uses the same evidence pack. Response includes evidence_pack for frontend consumption.
+
+2. **Data-Driven Site Design (site-responsive-house-design spec):** Replaced climate-only heuristics with actual terrain analysis from the elevation grid. Pad selection: divides parcel into 3×3 candidate zones, scores each on flatness, relief, cut/fill burden, flood penalty (-30), wetland penalty (-20), steep slope penalty (-25), drainage risk, soil hazards. Returns ranked candidates. Orientation scoring: evaluates 8 compass directions weighted by solar gain (climate-specific), west-heat penalty, terrain alignment. Returns top 4. Driveway: analyzes slope at each parcel edge, recommends flattest approach.
+
+3. **Confidence Badges + Provenance:** Frontend shows per-layer confidence (green=verified, yellow=partially verified, blue=heuristic, red=fallback), provenance line (14 GIS layers, AI engine, timestamp), assumptions list, and overall confidence summary with color-coded banner.
+
+4. **User Persona Selector:** Dropdown in header (Homeowner / Architect / Developer) for future persona-aware AI output.
+
+5. **AI Report Enhancements:** Added `top_reasons` (top 2-3 driving factors), `confidence_summary` (overall + reason), `assumptions` in ai_report JSON. Both Claude and rule-based fallback produce these fields.
+
+**Why this approach:** The evidence-pack spec identifies the core problem: "raw GIS and engineering outputs are reduced to a small analysis_summary — Claude mostly rewrites summary numbers into prose." The evidence pack gives Claude (or the fallback) full spatial detail, provenance, uncertainty, and tradeoff structure. Data-driven site design follows the site-responsive-house-design spec's Stage 1-4 (terrain preparation → constraint envelope → candidate placement → scoring).
+
+**Files changed:** analyze.js (assembleEvidencePack, data-driven generateSiteDesign with 9-zone pad scoring + 8-direction orientation scoring, updated brain pipeline), App.jsx (confidence badges, provenance, assumptions, user persona selector, top_reasons in verdict)
+
+**Next:** Test end-to-end, verify evidence_pack renders correctly, add persona-aware Claude prompt, PDF integration of evidence_pack data

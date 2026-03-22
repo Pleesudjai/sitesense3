@@ -14,6 +14,7 @@ Claude should use this spec to:
 
 This spec should be used together with:
 
+- [evidence-pack-ai-report-architecture.md](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/evidence-pack-ai-report-architecture.md)
 - [problem-statement-and-user-needs.md](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/problem-statement-and-user-needs.md)
 - [pdf-report-user-first.md](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/pdf-report-user-first.md)
 - [hackathon-win-plan.md](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/hackathon-win-plan.md)
