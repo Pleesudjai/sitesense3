@@ -155,8 +155,6 @@ function assignRoomsToFacades(rooms, siteDesign) {
 
 function layoutHouse(rooms, footprintSF, stories, siteDesign) {
   if (!rooms || rooms.length === 0) return { floors: [], footW: 0, footH: 0, facades: null }
-  const footW = Math.sqrt(footprintSF * 1.3)
-  const footH = footprintSF / footW
   const facades = getFacadeAssignment(siteDesign)
 
   // Classify and assign rooms to facades
@@ -165,6 +163,14 @@ function layoutHouse(rooms, footprintSF, stories, siteDesign) {
   // Separate by floor
   const byFloor = {}
   assigned.forEach(r => { const f = r.floor || 1; (byFloor[f] = byFloor[f] || []).push(r) })
+
+  // Calculate footprint from actual room areas per floor (not footprintSF param)
+  // so the outline always fits all rooms + corridor
+  const maxFloorArea = Math.max(...Object.values(byFloor).map(
+    floorRooms => floorRooms.reduce((s, r) => s + (r.area || r.targetSF || 100), 0) + CORRIDOR_FT * Math.sqrt(footprintSF * 1.3)
+  ))
+  const footW = Math.sqrt(maxFloorArea * 1.3)
+  const footH = maxFloorArea / footW
 
   const floors = []
 

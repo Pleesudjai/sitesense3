@@ -935,13 +935,31 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
       const relief = elevMax - elevMin
 
       // ── Stage 2: Score each candidate ──────────────────────────────────
-      let score = 100
+      // Start at 50 (not 100) so flat parcels show meaningful variation
+      let score = 50
 
-      // Flatness score (most important — lower slope = higher score)
-      score -= avgSlope * 3  // 10% slope = -30 points
-      score -= relief * 2     // 5ft relief = -10 points
+      // Flatness bonus (0-25 pts): flatter = better
+      // 0% slope = +25, 5% = +10, 15% = 0, 30% = -25
+      score += Math.max(-25, 25 - avgSlope * 3.5)
 
-      // Cut/fill penalty (prefer minimal earthwork)
+      // Relief penalty (0-15 pts): less relief = better
+      // 0 ft = +15, 2ft = +10, 5ft = +5, 10ft = 0, 20ft = -15
+      score += Math.max(-15, 15 - relief * 1.5)
+
+      // Relative position bonus: compare this zone's slope to the parcel average
+      const parcelAvgSlope = slopeData?.avg_slope_pct || avgSlope
+      if (avgSlope < parcelAvgSlope * 0.7) score += 10  // significantly flatter than average
+      else if (avgSlope < parcelAvgSlope * 0.9) score += 5  // somewhat flatter
+      else if (avgSlope > parcelAvgSlope * 1.3) score -= 8  // steeper than average
+
+      // Elevation position: prefer mid-elevation (not lowest = drainage, not highest = exposed)
+      const medianElev = elevData?.avg_elevation_ft || avgElev
+      const elevDiff = Math.abs(avgElev - medianElev)
+      if (elevDiff < 1) score += 5  // near median = good drainage + not exposed
+      if (avgElev < medianElev - 3) score -= 8  // low-lying = drainage risk
+      if (avgElev > medianElev + 5) score -= 3  // high = exposed to wind
+
+      // Cut/fill penalty
       const targetGrade = avgElev
       let cutVol = 0, fillVol = 0
       for (let r = r0; r < r1; r++) {
@@ -951,28 +969,25 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
           else fillVol += (targetGrade - e)
         }
       }
-      score -= (cutVol + fillVol) * 0.5  // penalize earthwork
+      const earthwork = cutVol + fillVol
+      score -= Math.min(15, earthwork * 0.8)
 
       // Flood penalty
       if (floodData?.zone && ['AE', 'VE', 'AO', 'AH', 'A'].includes(floodData.zone)) {
-        score -= 30  // major penalty
+        score -= 25
       }
 
       // Wetlands penalty
-      if (wetlandsData?.present) score -= 20
+      if (wetlandsData?.present) score -= 15
 
       // Steep slope penalty
-      if (slopeMax > 30) score -= 25
-      else if (slopeMax > 15) score -= 10
-
-      // Drainage: penalize low-lying areas (below median elevation)
-      const medianElev = elevData?.avg_elevation_ft || avgElev
-      if (avgElev < medianElev - 2) score -= 10  // low area collects water
+      if (slopeMax > 30) score -= 20
+      else if (slopeMax > 15) score -= 8
 
       // Soil penalty
-      if (soilData?.shrink_swell === 'High') score -= 10
-      if (soilData?.collapsible) score -= 15
-      if (soilData?.organic) score -= 30
+      if (soilData?.shrink_swell === 'High') score -= 8
+      if (soilData?.collapsible) score -= 12
+      if (soilData?.organic) score -= 25
 
       // Position label (N/S/E/W/center from grid position)
       const posNS = pr === 0 ? 'north' : pr === 2 ? 'south' : 'central'
@@ -1005,10 +1020,21 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
   const runnerUp = candidates[1]
 
   // ── Stage 3: Orientation scoring ────────────────────────────────────────
-  // Score 8 orientations (0°, 45°, 90°, ... 315°) based on:
-  // - Solar: south-facing preferred (for heating in cold, controlled in hot)
-  // - Terrain: align with slope for drainage
-  // - Climate-specific adjustments
+  // Compute actual slope aspect (dominant downhill direction) from elevation grid
+  // Aspect = direction the slope faces (0=N, 90=E, 180=S, 270=W)
+  let aspectDeg = 180  // default south
+  if (rows > 2 && cols > 2) {
+    let dzNS = 0, dzEW = 0
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        dzNS += (grid[r + 1]?.[c] || 0) - (grid[r - 1]?.[c] || 0)  // positive = slopes south
+        dzEW += (grid[r]?.[c + 1] || 0) - (grid[r]?.[c - 1] || 0)  // positive = slopes east
+      }
+    }
+    // atan2 gives angle from north, clockwise
+    aspectDeg = (Math.atan2(dzEW, dzNS) * 180 / Math.PI + 360) % 360
+  }
+
   const slopeDir = summary.slope_direction || 'south'
   const orientations = []
   const ORIENT_LABELS = ['North (0°)', 'NE (45°)', 'East (90°)', 'SE (135°)', 'South (180°)', 'SW (225°)', 'West (270°)', 'NW (315°)']
@@ -1017,22 +1043,40 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
     const deg = i * 45
     let oScore = 50
 
-    // Solar scoring (south-facing = best for most US latitudes)
-    const southness = Math.cos((deg - 180) * Math.PI / 180) // 1.0 at 180° (south), -1.0 at 0° (north)
-    if (climate === 'cold') oScore += southness * 30        // cold: strongly favor south
-    else if (climate === 'hot_arid') oScore += southness * 15 + (deg > 135 && deg < 225 ? 5 : 0) // hot: moderate south + slight SE preference
-    else if (climate === 'hot_humid') oScore += (deg >= 90 && deg <= 180 ? 15 : -5)  // humid: favor SE for ventilation
-    else oScore += southness * 20  // temperate: favor south
+    // === Solar scoring (30% weight) ===
+    const southness = Math.cos((deg - 180) * Math.PI / 180)
+    if (climate === 'cold') oScore += southness * 20
+    else if (climate === 'hot_arid') oScore += southness * 12
+    else if (climate === 'hot_humid') oScore += (deg >= 90 && deg <= 180 ? 10 : -3)
+    else oScore += southness * 15
 
-    // Penalize due-west facing (afternoon heat in most climates)
-    if (deg === 270) oScore -= 15
-    if (deg === 225 || deg === 315) oScore -= 5
+    // === Terrain aspect scoring (30% weight) ===
+    // Face the same direction the slope descends (downhill views, natural drainage away)
+    const aspectAlign = Math.cos((deg - aspectDeg) * Math.PI / 180)  // 1.0 = aligned with slope
+    oScore += aspectAlign * 15  // strong terrain influence
 
-    // Terrain alignment bonus (face downhill for views, uphill for shelter)
-    if (slopeDir === 'south' && (deg >= 135 && deg <= 225)) oScore += 5
-    if (slopeDir === 'north' && (deg >= 315 || deg <= 45)) oScore += 5
+    // Cross-slope bonus: perpendicular to slope = natural cross-ventilation
+    const crossSlope = Math.abs(Math.sin((deg - aspectDeg) * Math.PI / 180))
+    oScore += crossSlope * 5
 
-    orientations.push({ label: ORIENT_LABELS[i], degrees: deg, score: Math.round(oScore) })
+    // === West penalty (20% weight) ===
+    if (deg === 270) oScore -= 12  // due west = worst afternoon heat
+    if (deg === 225 || deg === 315) oScore -= 4
+
+    // === Parcel shape bonus (10% weight) ===
+    // Prefer orientation aligned with the longer parcel dimension
+    const bboxW = bbox[2] - bbox[0], bboxH = bbox[3] - bbox[1]
+    const parcelAspect = bboxW / (bboxH || 1)
+    if (parcelAspect > 1.3 && (deg === 0 || deg === 180)) oScore += 5  // wide parcel: face N/S
+    if (parcelAspect < 0.7 && (deg === 90 || deg === 270)) oScore += 5  // tall parcel: face E/W
+
+    // === Access bonus (10% weight) ===
+    // Slight bonus for facing the flattest edge (driveway approach)
+    const flatEdge = slopeDir === 'south' ? 180 : slopeDir === 'north' ? 0 : slopeDir === 'east' ? 90 : 270
+    const accessAlign = Math.cos((deg - flatEdge) * Math.PI / 180)
+    oScore += accessAlign * 3
+
+    orientations.push({ label: ORIENT_LABELS[i], degrees: deg, score: Math.round(Math.max(0, Math.min(100, oScore))) })
   }
 
   orientations.sort((a, b) => b.score - a.score)
