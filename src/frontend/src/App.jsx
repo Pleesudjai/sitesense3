@@ -215,13 +215,115 @@ export default function App() {
               <CutFillVisual cutFill={result.cut_fill} />
               <CostTable costs={result.costs} />
 
-              {/* AI Report text */}
-              {result.report_text && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <h2 className="font-bold text-sm text-teal mb-3">AI Feasibility Report</h2>
-                  <div className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    {result.report_text}
-                  </div>
+              {/* AI Brain Report */}
+              {(result.ai_report || result.report_text) && (
+                <div className="bg-gray-800 rounded-lg p-4 space-y-3">
+                  <h2 className="font-bold text-sm text-teal mb-2">AI Feasibility Analysis</h2>
+
+                  {result.ai_report ? (
+                    <>
+                      {/* Verdict */}
+                      <div className={`rounded-lg p-3 border-l-4 ${
+                        result.ai_report.verdict === 'Good Candidate' ? 'bg-green-950/30 border-green-500' :
+                        result.ai_report.verdict === 'High Risk' ? 'bg-red-950/30 border-red-500' :
+                        'bg-amber-950/30 border-amber-500'
+                      }`}>
+                        <p className="text-sm font-bold text-white">{result.ai_report.verdict}</p>
+                        <p className="text-xs text-gray-300 mt-1">{result.ai_report.verdict_reason}</p>
+                      </div>
+
+                      {/* Tradeoffs */}
+                      {result.ai_report.tradeoffs?.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-amber-400 mb-1">Key Tradeoffs</h3>
+                          <ul className="text-xs text-gray-400 space-y-1">
+                            {result.ai_report.tradeoffs.map((t, i) => (
+                              <li key={i} className="bg-amber-950/20 rounded px-2 py-1 border-l-2 border-amber-700">{t}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Best Fit */}
+                      {result.ai_report.best_fit_concept && (
+                        <div className="bg-teal-950/20 border border-teal-800/30 rounded p-2">
+                          <h3 className="text-xs font-semibold text-teal mb-1">Best Fit Concept</h3>
+                          <p className="text-xs text-gray-300">{result.ai_report.best_fit_concept}</p>
+                        </div>
+                      )}
+
+                      {/* Scenarios */}
+                      {result.ai_report.scenario_comparison && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-gray-400 mb-1">Scenario Comparison</h3>
+                          <p className="text-xs text-gray-400">{result.ai_report.scenario_comparison.build_now_vs_wait}</p>
+                          {result.ai_report.scenario_comparison.concept_options && (
+                            <p className="text-xs text-gray-500 mt-1">{result.ai_report.scenario_comparison.concept_options}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Unknowns */}
+                      {result.ai_report.unknowns?.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-red-400 mb-1">Still Needs Verification</h3>
+                          <ul className="text-xs text-gray-400 list-disc list-inside space-y-0.5">
+                            {result.ai_report.unknowns.map((u, i) => <li key={i}>{u}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Next Steps */}
+                      {result.ai_report.next_steps?.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-blue-400 mb-1">Recommended Next Steps</h3>
+                          <div className="space-y-1">
+                            {result.ai_report.next_steps.map((s, i) => (
+                              <div key={i} className="bg-blue-950/20 rounded px-2 py-1.5 text-xs">
+                                <span className="text-white font-medium">{i+1}. {s.action}</span>
+                                <span className="text-gray-500"> — {s.who}</span>
+                                {s.why && <p className="text-gray-500 mt-0.5 text-[10px]">{s.why}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Site Design */}
+                      {result.ai_report.site_design && (
+                        <div className="bg-gray-700/30 rounded-lg p-3">
+                          <h3 className="text-xs font-semibold text-teal mb-2">Where to Build on This Parcel</h3>
+                          <div className="space-y-2 text-xs">
+                            <div><span className="text-gray-500">Best pad location:</span> <span className="text-gray-300">{result.ai_report.site_design.recommended_pad}</span></div>
+                            <div><span className="text-gray-500">Building orientation:</span> <span className="text-gray-300">{result.ai_report.site_design.orientation}</span></div>
+                            <div className="text-gray-500 text-[10px] italic">{result.ai_report.site_design.orientation_reason}</div>
+                            {result.ai_report.site_design.window_strategy?.length > 0 && (
+                              <div>
+                                <span className="text-gray-500">Window strategy:</span>
+                                <ul className="text-gray-400 list-disc list-inside mt-0.5">
+                                  {result.ai_report.site_design.window_strategy.map((w, i) => <li key={i}>{w}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {result.ai_report.site_design.room_zoning?.length > 0 && (
+                              <div>
+                                <span className="text-gray-500">Room placement:</span>
+                                <ul className="text-gray-400 list-disc list-inside mt-0.5">
+                                  {result.ai_report.site_design.room_zoning.map((r, i) => <li key={i}>{r}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            <div><span className="text-gray-500">Driveway:</span> <span className="text-gray-400">{result.ai_report.site_design.driveway_access}</span></div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    // Fallback: render as raw text (backward compatibility)
+                    <div className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
+                      {result.report_text}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

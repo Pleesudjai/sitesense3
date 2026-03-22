@@ -886,61 +886,285 @@ function calculateRunoff(areaAcres, slopePct, soilClass) {
   return { runoff_coeff: C, rainfall_intensity_in_hr: 1.0, area_acres: areaAcres, peak_cfs: Math.round(Q * 100) / 100, detention_needed: Q > 2.0, detention_volume_cf: Q > 2.0 ? Math.round(Q * 3600 * 0.5) : 0 }
 }
 
-// ─── CLAUDE AI REPORT ────────────────────────────────────────────────────────
+// ─── CLIMATE & SITE DESIGN HELPERS ───────────────────────────────────────────
 
-async function generateReportText(summary) {
+function getClimateZone(lat, state) {
+  if (['FL','LA','MS','AL','GA','SC','HI'].includes(state) || lat < 30) return 'hot_humid'
+  if (['AZ','NV','NM'].includes(state) || (state === 'TX' && lat < 33)) return 'hot_arid'
+  if (lat > 42 || ['MT','WY','MN','WI','ME','VT','NH','ND','SD'].includes(state)) return 'cold'
+  return 'temperate'
+}
+
+function generateSiteDesign(summary) {
+  const lat = summary.center_lat || 33.45
+  const state = summary.state || 'AZ'
+  const climate = getClimateZone(lat, state)
+  const slopeDir = summary.slope_direction || 'south'
+  const avgSlope = summary.avg_slope_pct || 0
+
+  // Pad: flattest area
+  const pad = avgSlope < 5
+    ? 'Center of parcel — terrain is nearly flat, minimal grading needed'
+    : avgSlope < 15
+      ? `Uphill portion of parcel — reduces cut volume. Slopes ${slopeDir}ward.`
+      : `Most level zone within the parcel — steep terrain (${avgSlope.toFixed(1)}%) requires careful pad selection`
+
+  // Orientation by climate
+  let orientation, orientReason
+  if (climate === 'hot_arid') {
+    orientation = 'Rotate 10-15° east of south'
+    orientReason = 'Reduces harsh afternoon west sun exposure while capturing morning light and supporting cross-ventilation'
+  } else if (climate === 'hot_humid') {
+    orientation = 'Orient for maximum cross-ventilation (typically SE-NW axis)'
+    orientReason = 'Prioritizes airflow over solar control — humidity management is critical'
+  } else if (climate === 'cold') {
+    orientation = 'Face due south'
+    orientReason = 'Maximizes winter solar heat gain — reduces heating costs'
+  } else {
+    orientation = 'Face due south or slightly east of south'
+    orientReason = 'Balanced solar exposure for both heating and cooling seasons'
+  }
+
+  // Window strategy by climate
+  const windows = {
+    hot_arid: [
+      'South facade: controlled glazing with overhangs for winter sun, summer shade',
+      'East facade: morning light — moderate windows acceptable',
+      'West facade: MINIMIZE unshaded glazing — afternoon heat gain is severe',
+      'North facade: moderate windows for diffused daylight, no direct sun',
+    ],
+    hot_humid: [
+      'Southeast facade: large operable windows for morning cross-ventilation',
+      'Northwest facade: operable windows for afternoon breeze exhaust',
+      'West facade: shade all glazing — afternoon heat + humidity',
+      'North facade: good for diffused daylight without heat gain',
+    ],
+    cold: [
+      'South facade: MAXIMIZE glazing — passive solar heating in winter',
+      'East facade: moderate windows for morning warmth',
+      'West facade: moderate glazing with summer shading',
+      'North facade: minimize windows — heat loss in winter',
+    ],
+    temperate: [
+      'South facade: generous windows with overhangs for seasonal control',
+      'East facade: moderate windows — pleasant morning light',
+      'West facade: moderate glazing, use shading devices for summer',
+      'North facade: smaller windows for diffused light',
+    ],
+  }
+
+  // Room zoning
+  const rooms = {
+    hot_arid: [
+      'Living/dining on south-southeast — controlled daylight with overhangs',
+      'Kitchen on east — morning light for cooking',
+      'Bedrooms on north/northeast — coolest orientation',
+      'Garage/laundry on west — thermal buffer against afternoon heat',
+    ],
+    hot_humid: [
+      'Living spaces on windward side — natural ventilation priority',
+      'Bedrooms oriented for cross-ventilation — comfort during sleep',
+      'Kitchen on leeward side — exhaust cooking heat downwind',
+      'Service spaces as wind barriers on storm-exposure side',
+    ],
+    cold: [
+      'Living/dining on south — maximize solar warmth',
+      'Bedrooms on east/southeast — morning sun warmth',
+      'Kitchen on east — morning light, less heating needed',
+      'Garage/mudroom on north — cold buffer zone',
+    ],
+    temperate: [
+      'Living/dining on south — best year-round daylight',
+      'Kitchen on east or south — morning to midday light',
+      'Bedrooms flexible — east for morning sun, north for quiet',
+      'Service spaces on least favorable facade',
+    ],
+  }
+
+  return {
+    recommended_pad: pad,
+    orientation,
+    orientation_reason: orientReason,
+    window_strategy: windows[climate],
+    room_zoning: rooms[climate],
+    driveway_access: avgSlope < 5
+      ? 'Flexible — flat terrain allows approach from any direction'
+      : `Approach from the ${slopeDir === 'north' ? 'south' : slopeDir === 'south' ? 'north' : slopeDir === 'east' ? 'west' : 'east'} edge for flattest driveway grade`,
+    climate_zone: climate,
+  }
+}
+
+// ─── RULE-BASED REPORT (fallback — no Claude API needed) ────────────────────
+
+function generateRuleBasedReport(summary) {
+  // Count high-risk factors
+  const risks = []
+  if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) risks.push('flood zone ' + summary.flood_zone)
+  if ((summary.shrink_swell || '').toLowerCase() === 'high') risks.push('high shrink-swell soil')
+  if ((summary.avg_slope_pct || 0) > 15) risks.push(`steep slope (${summary.avg_slope_pct.toFixed(1)}%)`)
+  if (summary.wetlands_present) risks.push('wetlands present')
+  if ((summary.fire_risk || '').toLowerCase() === 'high') risks.push('high wildfire risk')
+
+  const verdict = risks.length === 0 ? 'Good Candidate'
+    : risks.length <= 2 ? 'Proceed with Caution'
+    : 'High Risk'
+
+  const verdict_reason = risks.length === 0
+    ? 'No major risk factors detected — site appears suitable for standard construction.'
+    : `Site has ${risks.length} concern(s): ${risks.join(', ')}.`
+
+  // Tradeoffs — check for conflicts
+  const tradeoffs = []
+  if ((summary.area_acres || 0) > 1 && ['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) {
+    tradeoffs.push('Large parcel offers space, but flood zone designation reduces usable building area and increases insurance costs.')
+  }
+  if ((summary.shrink_swell || '').toLowerCase() !== 'high' && (summary.avg_slope_pct || 0) > 10) {
+    tradeoffs.push('Soil conditions are favorable, but steep slope increases grading costs and complexity.')
+  }
+  if ((summary.avg_slope_pct || 0) <= 5 && (summary.shrink_swell || '').toLowerCase() === 'high') {
+    tradeoffs.push('Flat terrain simplifies construction, but expansive soil requires a more expensive foundation system (PT slab).')
+  }
+  const sdc = (summary.seismic_sdc || '').toUpperCase()
+  if (['A', 'B'].includes(sdc) && (summary.wind_mph || 0) > 110) {
+    tradeoffs.push('Low seismic risk, but high wind loads will drive structural design and increase framing costs.')
+  }
+  if (tradeoffs.length === 0) {
+    tradeoffs.push('No major competing factors — site conditions are relatively consistent across risk categories.')
+  }
+
+  // Best fit concept
+  const slope = summary.avg_slope_pct || 0
+  const foundation = summary.foundation_type || 'conventional slab'
+  let best_fit_concept
+  if (slope > 15) {
+    best_fit_concept = `Steep terrain favors a stepped or split-level design with ${foundation} to minimize grading. Consider a walkout basement on the downhill side.`
+  } else if ((summary.shrink_swell || '').toLowerCase() === 'high') {
+    best_fit_concept = `Expansive soil calls for a single-story or lightweight structure on ${foundation} to reduce differential settlement risk.`
+  } else if (['AE', 'VE'].includes(summary.flood_zone)) {
+    best_fit_concept = `Flood zone requires elevated construction on ${foundation}. Consider a raised first floor with breakaway walls or open parking below.`
+  } else {
+    best_fit_concept = `Standard single-family or small commercial construction on ${foundation} is appropriate. No unusual design constraints.`
+  }
+
+  // Scenario comparison
+  const totalNow = summary.total_now || 0
+  const cost5yr = summary.cost_5yr || 0
+  const pctIncrease = totalNow > 0 ? (((cost5yr - totalNow) / totalNow) * 100).toFixed(1) : '0'
+  const scenario_comparison = {
+    build_now_vs_wait: `Building now costs ~$${totalNow.toLocaleString()}. Waiting 5 years pushes estimated cost to ~$${cost5yr.toLocaleString()} (${pctIncrease}% increase at 4.5% ENR CCI inflation). Early action locks in today's pricing.`,
+    concept_options: slope > 10
+      ? 'Option A: Full grading to create a level pad (higher earthwork cost, simpler foundation). Option B: Stepped foundation following natural grade (lower earthwork, more complex structure).'
+      : 'Standard pad grading with conventional foundation is the most cost-effective approach for this terrain.',
+  }
+
+  // Unknowns
+  const unknowns = [
+    'Soil data is screening-level — geotechnical boring still needed',
+    'Utility availability not confirmed',
+  ]
+  if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) {
+    unknowns.push('Exact flood boundary requires survey verification')
+  }
+  if (summary.wetlands_present) {
+    unknowns.push('NWI mapping is not jurisdictional — delineation needed')
+  }
+
+  // Next steps
+  const next_steps = [
+    { action: 'Commission geotechnical boring', who: 'Geotechnical engineer', why: 'Confirms soil bearing capacity, expansive potential, and groundwater depth' },
+    { action: 'Order topographic survey', who: 'Licensed surveyor', why: 'Accurate elevations needed for grading plan and foundation design' },
+  ]
+  if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) {
+    next_steps.push({ action: 'Obtain flood determination letter', who: 'FEMA-certified floodplain manager', why: 'Confirms exact flood zone boundary and base flood elevation' })
+  }
+  if (summary.wetlands_present) {
+    next_steps.push({ action: 'Conduct wetland delineation', who: 'Environmental consultant', why: 'Determines jurisdictional boundaries and permitting requirements' })
+  }
+  if ((summary.shrink_swell || '').toLowerCase() === 'high' || summary.caliche) {
+    next_steps.push({ action: 'Engage structural engineer for foundation design', who: 'Structural engineer (PE)', why: 'Expansive soil or caliche requires specialized foundation detailing' })
+  }
+  next_steps.push({ action: 'Engage architect for concept development', who: 'Licensed architect', why: 'Translate feasibility findings into a buildable design concept' })
+
+  // Site design
+  const site_design = generateSiteDesign(summary)
+
+  return {
+    verdict,
+    verdict_reason,
+    tradeoffs,
+    best_fit_concept,
+    scenario_comparison,
+    unknowns,
+    next_steps,
+    site_design,
+  }
+}
+
+// ─── CLAUDE AI BRAIN REPORT ─────────────────────────────────────────────────
+
+async function generateAiBrainReport(summary) {
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return '⚠️ AI report unavailable — ANTHROPIC_API_KEY not set in Netlify environment variables.'
+
+  // Try Claude first, fall back to rule-based
+  if (!apiKey) {
+    console.log('No ANTHROPIC_API_KEY — using rule-based report')
+    return generateRuleBasedReport(summary)
+  }
 
   const client = new Anthropic({ apiKey })
-  const floodRisk = ['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone) ? 'HIGH' : 'LOW'
-  const netDir = summary.net_cy > 0 ? 'export (surplus)' : 'import (deficit)'
 
-  const prompt = `You are a friendly civil engineer explaining a land feasibility study to a homeowner or small developer. Use plain English. Be direct about risks. Use bullet points.
+  const prompt = `You are SiteSense Parcel Strategist — a civil engineering AI consultant specializing in early-stage land feasibility. You synthesize multiple data signals into judgments, identify tradeoffs, detect unknowns, and prepare professional handoff briefs.
+
+ENGINEERING DOCTRINE:
+- IBC 2021: §1803 Soils, §1806 Bearing (Table 1806.2), §1808 Foundations
+- ASCE 7-22: Ch.12 Seismic, Ch.26-27 Wind, Ch.5 Flood, Ch.7 Snow
+- ACI 360R-10: §5.4 PT slab for expansive soils, §4.2 grade beams
+- Foundation priority: organic→deep pile, flood AE→elevated, slope>30%→caisson, expansive→PT slab, caliche→grade beams, default→conventional slab
 
 SITE DATA:
-- Address: ${summary.address || 'User-selected parcel'}
-- Area: ${summary.area_acres?.toFixed(2)} acres (${(summary.buildable_sf || 0).toLocaleString()} SF buildable)
-- Elevation: ${summary.avg_elevation_ft?.toFixed(0)} ft avg, range ${summary.min_elevation_ft?.toFixed(0)}–${summary.max_elevation_ft?.toFixed(0)} ft
-- Slope: ${summary.avg_slope_pct?.toFixed(1)}% avg, ${summary.max_slope_pct?.toFixed(1)}% max
-- Flood zone: ${summary.flood_zone} — Risk: ${floodRisk}
-- Seismic Design Category: ${summary.seismic_sdc}
-- Wildfire risk: ${summary.fire_risk}
-- Soil: ${summary.soil_texture}, USCS: ${summary.uscs_estimate || '?'}, HSG: ${summary.hydrologic_group || 'B'}
-  Shrink-swell: ${summary.shrink_swell}, Expansive risk: ${summary.expansive_risk || '?'}, LL=${summary.liquid_limit || '?'}, PI=${summary.plasticity_index || '?'}
-  Bearing: ~${summary.presumptive_bearing_psf || '?'} psf (IBC Table 1806.2), Drainage: ${summary.drainage_class || 'well drained'}
-  Caliche: ${summary.caliche ? 'Yes' : 'No'}, Collapsible: ${summary.collapsible ? 'Yes' : 'No'}, Liquefiable: ${summary.liquefiable ? 'Yes' : 'No'}, Organic: ${summary.organic ? 'Yes' : 'No'}
-  Frost: ${summary.frost_susceptibility || 'Low'}, Corrosion (concrete/steel): ${summary.corrosion_concrete || 'Low'}/${summary.corrosion_steel || 'Low'}
-- Building limitations: ${(summary.building_limitations || []).join('; ') || 'None identified'}
-- Wetlands: ${summary.wetlands_present ? 'Present — Section 404 permit likely required' : 'None detected'}
-- Wind: ${summary.wind_mph} mph, Snow: ${summary.snow_psf} psf
+${JSON.stringify(summary)}
 
-ENGINEERING RESULTS:
-- Cut: ${(summary.cut_cy || 0).toLocaleString()} CY | Fill: ${(summary.fill_cy || 0).toLocaleString()} CY | Net: ${Math.abs(summary.net_cy || 0).toLocaleString()} CY ${netDir}
-- Foundation: ${summary.foundation_type}
-
-COST ESTIMATE:
-- Now: $${(summary.total_now || 0).toLocaleString()} | 5yr: $${(summary.cost_5yr || 0).toLocaleString()} | 10yr: $${(summary.cost_10yr || 0).toLocaleString()}
-
-Write exactly 6 sections with ## headers:
-## 1. Site Snapshot
-## 2. Risk Assessment (use 🟢 🟡 🔴 for each risk)
-## 3. What You Can Build
-## 4. Earthwork & Site Prep Summary
-## 5. Cost Estimate & 10-Year Projection
-## 6. Your Next Steps (4–6 bullet actions)
-
-End with: ⚠️ DISCLAIMER: Preliminary planning only. Not a substitute for licensed PE review.`
+Respond with ONLY valid JSON matching this exact structure:
+{
+  "verdict": "Good Candidate" or "Proceed with Caution" or "High Risk",
+  "verdict_reason": "One sentence connecting 2-3 data signals to explain the verdict",
+  "tradeoffs": ["Each string explains a tension between two data signals"],
+  "best_fit_concept": "What type of building makes most sense and why",
+  "scenario_comparison": {
+    "build_now_vs_wait": "Compare today's cost vs waiting with reasoning",
+    "concept_options": "Compare building approaches if relevant"
+  },
+  "unknowns": ["Things still needing professional verification"],
+  "next_steps": [
+    {"action": "What to do", "who": "Professional type", "why": "Reason this matters"}
+  ],
+  "site_design": {
+    "recommended_pad": "Where on the parcel to place the building and why",
+    "orientation": "Which direction the building should face",
+    "orientation_reason": "Why this orientation based on solar, wind, terrain",
+    "window_strategy": ["One recommendation per facade"],
+    "room_zoning": ["Where to place different room types and why"],
+    "driveway_access": "Where to place driveway access"
+  }
+}`
 
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1800,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     })
-    return response.content[0].text
+    const text = response.content[0].text
+    try {
+      return JSON.parse(text)
+    } catch {
+      // Claude returned non-JSON — wrap it
+      console.warn('Claude returned non-JSON, falling back to rule-based')
+      return generateRuleBasedReport(summary)
+    }
   } catch (e) {
-    return `AI report generation failed: ${e.message}`
+    console.error('Claude API failed, falling back to rule-based:', e.message)
+    return generateRuleBasedReport(summary)
   }
 }
 
@@ -1429,9 +1653,34 @@ exports.handler = async (event) => {
       wind_mph: seismicData.wind_mph, snow_psf: loads.snow_psf,
       buildable_sf: Math.round(buildableSf),
       total_now: costs.total_now, cost_5yr: costs.projections[5], cost_10yr: costs.projections[10],
+      center_lat: elevData.center_lat, center_lon: elevData.center_lon,
     }
 
-    const reportText = await generateReportText(summary)
+    // Extract state abbreviation from address (e.g. "Tempe, AZ 85281" → "AZ")
+    const stateMatch = address.match(/\b([A-Z]{2})\s*\d{5}/) || address.match(/,\s*([A-Z]{2})\b/)
+    summary.state = stateMatch ? stateMatch[1] : ''
+
+    // Derive dominant slope direction from elevation grid
+    const grid = elevData.grid
+    if (grid && grid.length > 1 && grid[0].length > 1) {
+      const rows = grid.length, cols = grid[0].length
+      let dzNS = 0, dzEW = 0
+      for (let r = 0; r < rows - 1; r++) {
+        for (let c = 0; c < cols - 1; c++) {
+          dzNS += grid[r + 1][c] - grid[r][c]   // positive = descending northward (row 0 = north)
+          dzEW += grid[r][c + 1] - grid[r][c]   // positive = descending eastward
+        }
+      }
+      if (Math.abs(dzNS) > Math.abs(dzEW)) {
+        summary.slope_direction = dzNS > 0 ? 'south' : 'north'
+      } else {
+        summary.slope_direction = dzEW > 0 ? 'east' : 'west'
+      }
+    } else {
+      summary.slope_direction = 'south'
+    }
+
+    const aiReport = await generateAiBrainReport(summary)
 
     return {
       statusCode: 200,
@@ -1448,7 +1697,9 @@ exports.handler = async (event) => {
           foundation: { type: foundationType, code_ref: foundationCode },
           loads, runoff,
           buildable_sf: Math.round(buildableSf),
-          costs, summary, report_text: reportText,
+          costs, summary,
+          report_text: typeof aiReport === 'string' ? aiReport : JSON.stringify(aiReport),
+          ai_report: aiReport,
         },
       }),
     }

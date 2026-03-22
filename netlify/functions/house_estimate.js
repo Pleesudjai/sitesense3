@@ -388,56 +388,141 @@ async function geocodeLocation(location) {
   }
 }
 
-// ─── CLAUDE AI SUMMARY ──────────────────────────────────────────────────────
+// ─── RULE-BASED HOUSE REPORT (fallback when no API key) ─────────────────────
 
-async function generateAiSummary(layouts, costs, structuralNotes, quality, location) {
+function generateRuleBasedHouseReport(layouts, costs, structuralNotes, quality, location, siteData) {
+  // recommendation — always Standard
+  const std = layouts.find(l => l.name === 'Standard') || layouts[1]
+  const stdIdx = layouts.indexOf(std)
+  const stdCost = costs[stdIdx]
+  const recommendation = `The Standard layout (${std.totalSF.toLocaleString()} SF) offers the best balance of livable space and construction cost at $${stdCost.total.toLocaleString()} estimated.`
+
+  // reasoning — check site conditions
+  const reasonParts = []
+  if (siteData && siteData.soil) {
+    const sw = (siteData.soil.shrinkSwell || siteData.soil.shrink_swell || '').toLowerCase()
+    if (sw === 'high' || sw === 'critical') {
+      reasonParts.push('High shrink-swell soil requires a post-tensioned slab, increasing foundation cost but ensuring long-term stability.')
+    } else {
+      reasonParts.push(`Soil conditions (${siteData.soil.type || 'loam'}) support a conventional foundation.`)
+    }
+  }
+  if (siteData && siteData.loads) {
+    const sdc = siteData.loads.seismicSdc || siteData.loads.seismic_sdc
+    if (sdc && sdc >= 'C') {
+      reasonParts.push(`Seismic Design Category ${sdc} requires enhanced lateral bracing.`)
+    }
+    const wind = siteData.loads.windMph || siteData.loads.wind_mph
+    if (wind && wind > 115) {
+      reasonParts.push(`High wind zone (${wind} mph) requires upgraded connections.`)
+    }
+  }
+  if (siteData && siteData.floodZone && siteData.floodZone !== 'X' && siteData.floodZone !== 'ZONE X') {
+    reasonParts.push(`Flood zone ${siteData.floodZone} may require an elevated or flood-proofed foundation.`)
+  }
+  if (reasonParts.length === 0) {
+    reasonParts.push('Site conditions are favorable with no major geotechnical or hazard concerns affecting foundation choice.')
+  }
+  const reasoning = reasonParts.join(' ')
+
+  // site_adaptation
+  const fndLabel = (siteData && siteData.foundation && siteData.foundation.type) || 'CONVENTIONAL_SLAB'
+  const structSys = std.structuralSystem || 'Wood frame (IRC prescriptive)'
+  const siteAdaptation = `Foundation: ${fndLabel.replace(/_/g, ' ').toLowerCase()}. Structural system: ${structSys}.`
+
+  // cost_drivers
+  const costDrivers = []
+  const qualLabel = quality.charAt(0).toUpperCase() + quality.slice(1)
+  costDrivers.push(`${qualLabel} quality tier finish level`)
+  const lcf = costs[stdIdx].costPerSF ? `$${costs[stdIdx].costPerSF}/SF blended rate` : 'Regional cost multiplier'
+  costDrivers.push(lcf)
+  const fndCost = costs[stdIdx].foundationCost
+  if (fndCost > 0) {
+    costDrivers.push(`Foundation premium: $${fndCost.toLocaleString()}`)
+  }
+
+  // build_vs_wait — compare now vs 5yr
+  const nowCost = costs[stdIdx].projection.find(p => p.year === 0)?.expected || costs[stdIdx].total
+  const yr5Cost = costs[stdIdx].projection.find(p => p.year === 5)?.expected || nowCost
+  const diff5 = yr5Cost - nowCost
+  const buildVsWait = diff5 > 0
+    ? `Building now saves approximately $${diff5.toLocaleString()} compared to waiting 5 years (4.5% annual inflation).`
+    : `Construction costs are stable — timing is flexible.`
+
+  // warnings — pull from structuralNotes
+  const warnings = structuralNotes.length > 0
+    ? structuralNotes.slice()
+    : ['No special structural concerns identified.']
+
+  return {
+    recommendation,
+    reasoning,
+    site_adaptation: siteAdaptation,
+    cost_drivers: costDrivers,
+    build_vs_wait: buildVsWait,
+    warnings,
+  }
+}
+
+// ─── CLAUDE AI HOUSE BRAIN REPORT ───────────────────────────────────────────
+
+async function generateHouseBrainReport(layouts, costs, structuralNotes, quality, location, siteData) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return 'AI summary unavailable — ANTHROPIC_API_KEY not configured. ' +
-      `The Standard layout is typically the best balance of space and cost. ` +
-      `Review structural notes above before proceeding.`
+    return generateRuleBasedHouseReport(layouts, costs, structuralNotes, quality, location, siteData)
   }
 
   try {
     const client = new Anthropic({ apiKey })
     const layoutSummary = layouts.map((l, i) => (
       `${l.name}: ${l.totalSF.toLocaleString()} SF, ` +
-      `$${costs[i].range.low.toLocaleString()}-$${costs[i].range.high.toLocaleString()}, ` +
+      `$${costs[i].range.low.toLocaleString()}-$${costs[i].range.high.toLocaleString()} ` +
+      `(expected $${costs[i].total.toLocaleString()}), ` +
       `${l.rooms.length} rooms, ${l.structuralSystem}`
     )).join('\n')
 
-    const prompt = `You are an expert residential construction estimator in Arizona.
+    const siteConditions = siteData ? JSON.stringify({
+      soil: siteData.soil,
+      seismic: siteData.loads,
+      floodZone: siteData.floodZone,
+    }, null, 2) : 'No site data available.'
 
-## Task
-Summarize these 3 house concept options for a client looking to build in ${location}.
-Recommend one option and explain why. Mention any structural concerns.
+    const prompt = `You are SiteSense House Concept Advisor. Analyze house layout options and site conditions to recommend the best building approach.
 
-## Options
+LAYOUT DATA:
 ${layoutSummary}
 
-## Quality Level: ${quality}
+SITE CONDITIONS:
+${siteConditions}
 
-## Structural Notes
+STRUCTURAL NOTES:
 ${structuralNotes.length > 0 ? structuralNotes.join('\n') : 'No special concerns.'}
 
-## Instructions
-- Write 3-4 short paragraphs in plain English
-- Recommend the best value option
-- Flag any structural concerns that could affect cost
-- End with: "This is a preliminary concept estimate only. Actual costs require a licensed contractor bid and site-specific engineering."
-- Keep it under 250 words`
+QUALITY LEVEL: ${quality}
+LOCATION: ${location}
+
+Respond with ONLY valid JSON:
+{
+  "recommendation": "Which layout and why (1 sentence)",
+  "reasoning": "How site conditions affected the recommendation (2-3 sentences)",
+  "site_adaptation": "What structural/foundation choices the site requires",
+  "cost_drivers": ["Top 3 factors driving the cost"],
+  "build_vs_wait": "One sentence on timing recommendation",
+  "warnings": ["Any concerns the user should know"]
+}`
 
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 800,
       messages: [{ role: 'user', content: prompt }],
     })
 
-    return message.content[0].text
+    const raw = message.content[0].text
+    return JSON.parse(raw)
   } catch (err) {
     console.error('Claude API error:', err.message)
-    return 'AI summary generation failed. The Standard layout typically offers the best balance ' +
-      'of livable space and construction cost. Review structural notes for site-specific concerns.'
+    // Fall back to rule-based report on any failure
+    return generateRuleBasedHouseReport(layouts, costs, structuralNotes, quality, location, siteData)
   }
 }
 
@@ -523,8 +608,13 @@ exports.handler = async (event) => {
       cost: costs[i],
     }))
 
-    // AI summary
-    const aiSummary = await generateAiSummary(layouts, costs, structuralNotes, qual, location)
+    // AI brain report (structured JSON)
+    const aiReport = await generateHouseBrainReport(layouts, costs, structuralNotes, qual, location, siteData)
+
+    // Backward-compatible string summary
+    const aiSummary = typeof aiReport === 'string'
+      ? aiReport
+      : aiReport.recommendation + '\n\n' + aiReport.reasoning
 
     return {
       statusCode: 200,
@@ -538,6 +628,7 @@ exports.handler = async (event) => {
           foundationType,
           structuralNotes,
           aiSummary,
+          ai_report: aiReport,
           gisData: siteData ? {
             soil: siteData.soil,
             seismic: siteData.loads,

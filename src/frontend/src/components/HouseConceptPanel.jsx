@@ -164,12 +164,70 @@ export default function HouseConceptPanel({ address, parcelReady, siteData, onRe
           )}
 
           {/* AI Summary */}
-          {result.aiSummary && (
-            <div className="bg-gray-800 rounded-lg p-4">
+          {(result.ai_report || result.aiSummary) && (
+            <div className="bg-gray-800 rounded-lg p-4 space-y-3">
               <h3 className="text-xs font-semibold text-gray-400 mb-2">AI Summary</h3>
-              <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-                {result.aiSummary}
-              </p>
+
+              {result.ai_report ? (
+                <>
+                  {/* Recommendation */}
+                  {result.ai_report.verdict && (
+                    <div className={`rounded-lg p-3 border-l-4 ${
+                      result.ai_report.verdict === 'Good Candidate' ? 'bg-green-950/30 border-green-500' :
+                      result.ai_report.verdict === 'High Risk' ? 'bg-red-950/30 border-red-500' :
+                      'bg-amber-950/30 border-amber-500'
+                    }`}>
+                      <p className="text-sm font-bold text-white">{result.ai_report.verdict}</p>
+                      {result.ai_report.verdict_reason && (
+                        <p className="text-xs text-gray-300 mt-1">{result.ai_report.verdict_reason}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Site adaptation */}
+                  {result.ai_report.best_fit_concept && (
+                    <div className="bg-teal-950/20 border border-teal-800/30 rounded p-2">
+                      <h4 className="text-xs font-semibold text-teal mb-1">Site Adaptation</h4>
+                      <p className="text-xs text-gray-300">{result.ai_report.best_fit_concept}</p>
+                    </div>
+                  )}
+
+                  {/* Cost drivers as chips */}
+                  {result.ai_report.tradeoffs?.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-amber-400 mb-1">Cost Drivers</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {result.ai_report.tradeoffs.map((t, i) => (
+                          <span key={i} className="bg-amber-950/30 border border-amber-800/40 text-amber-300 text-[10px] px-2 py-0.5 rounded-full">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Build vs wait */}
+                  {result.ai_report.scenario_comparison?.build_now_vs_wait && (
+                    <div className="bg-gray-700/30 rounded p-2">
+                      <h4 className="text-xs font-semibold text-gray-400 mb-1">Build Now vs. Wait</h4>
+                      <p className="text-xs text-gray-400">{result.ai_report.scenario_comparison.build_now_vs_wait}</p>
+                    </div>
+                  )}
+
+                  {/* Warnings / unknowns */}
+                  {result.ai_report.unknowns?.length > 0 && (
+                    <div className="bg-red-950/20 border border-red-800/30 rounded p-2">
+                      <h4 className="text-xs font-semibold text-red-400 mb-1">Warnings</h4>
+                      <ul className="text-xs text-gray-400 list-disc list-inside space-y-0.5">
+                        {result.ai_report.unknowns.map((u, i) => <li key={i}>{u}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // Fallback: render as raw text
+                <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+                  {result.aiSummary}
+                </p>
+              )}
             </div>
           )}
 
