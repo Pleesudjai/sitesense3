@@ -1102,58 +1102,75 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
     orientReason = 'Best available orientation based on terrain, solar, and climate analysis'
   }
 
-  // ── Window strategy + Room zoning (climate-based, same as before) ───────
-  const windowMap = {
+  // ── Compass-rotated facade labels ────────────────────────────────────────
+  // Map relative directions to actual compass based on building orientation
+  const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  const orientIdx = Math.round((orientDeg % 360) / 45) % 8
+  const front = DIRS[orientIdx]                    // direction building faces
+  const back = DIRS[(orientIdx + 4) % 8]           // opposite
+  const right = DIRS[(orientIdx + 2) % 8]          // 90° clockwise from front
+  const left = DIRS[(orientIdx + 6) % 8]           // 90° counter-clockwise
+
+  // Find which relative direction is closest to west (270°) — that's the hot side
+  const westIdx = 6  // W = index 6 in DIRS
+  const leftDist = Math.min(Math.abs((orientIdx + 6) % 8 - westIdx), 8 - Math.abs((orientIdx + 6) % 8 - westIdx))
+  const rightDist = Math.min(Math.abs((orientIdx + 2) % 8 - westIdx), 8 - Math.abs((orientIdx + 2) % 8 - westIdx))
+  const hotSide = leftDist <= rightDist ? left : right
+  const coolSide = leftDist <= rightDist ? right : left
+
+  // Window strategy using ACTUAL compass directions from orientation
+  const windowRules = {
     hot_arid: [
-      'South facade: controlled glazing with overhangs — winter sun, summer shade',
-      'East facade: moderate windows — morning light acceptable',
-      'West facade: MINIMIZE unshaded glazing — afternoon heat gain is severe',
-      'North facade: moderate windows — diffused daylight, no direct sun',
+      `${front} facade (front): controlled glazing with overhangs — best daylight with shade`,
+      `${coolSide} facade: moderate windows — morning/diffused light acceptable`,
+      `${hotSide} facade: MINIMIZE unshaded glazing — afternoon heat gain is severe`,
+      `${back} facade (back): moderate windows — diffused daylight, sheltered`,
     ],
     hot_humid: [
-      'Southeast facade: large operable windows for morning cross-ventilation',
-      'Northwest facade: operable windows for afternoon breeze exhaust',
-      'West facade: shade all glazing — afternoon heat + humidity',
-      'North facade: diffused daylight without heat gain',
+      `${front} facade (front): large operable windows for cross-ventilation`,
+      `${back} facade (back): operable windows for breeze exhaust`,
+      `${hotSide} facade: shade all glazing — afternoon heat + humidity`,
+      `${coolSide} facade: moderate windows — diffused daylight`,
     ],
     cold: [
-      'South facade: MAXIMIZE glazing — passive solar heating in winter',
-      'East facade: moderate windows — morning warmth',
-      'West facade: moderate glazing with summer shading',
-      'North facade: minimize windows — reduce heat loss',
+      `${front} facade (front): MAXIMIZE glazing — passive solar heating`,
+      `${coolSide} facade: moderate windows — morning warmth`,
+      `${hotSide} facade: moderate glazing with summer shading`,
+      `${back} facade (back): minimize windows — reduce heat loss`,
     ],
     temperate: [
-      'South facade: generous windows with overhangs for seasonal control',
-      'East facade: moderate windows — pleasant morning light',
-      'West facade: moderate glazing with shading devices',
-      'North facade: smaller windows for diffused light',
+      `${front} facade (front): generous windows with overhangs for seasonal control`,
+      `${coolSide} facade: moderate windows — pleasant light`,
+      `${hotSide} facade: moderate glazing with shading devices`,
+      `${back} facade (back): smaller windows for diffused light`,
     ],
   }
 
-  const roomMap = {
+  // Room zoning using ACTUAL compass directions
+  const roomRules = {
     hot_arid: [
-      'Living/dining on south-southeast — controlled daylight with overhangs',
-      'Kitchen on east — morning light for cooking',
-      'Bedrooms on north/northeast — coolest orientation',
-      'Garage/laundry on west — thermal buffer against afternoon heat',
+      `Living/dining on ${front} facade — controlled daylight with overhangs`,
+      `Kitchen on ${coolSide} — morning/diffused light for cooking`,
+      `Bedrooms on ${back}/${coolSide} — coolest orientation`,
+      `Garage/laundry on ${hotSide} — thermal buffer against heat`,
     ],
     hot_humid: [
-      'Living spaces on windward side — natural ventilation priority',
-      'Bedrooms oriented for cross-ventilation — comfort during sleep',
-      'Kitchen on leeward side — exhaust cooking heat downwind',
-      'Service spaces as wind barriers on storm-exposure side',
+      `Living spaces on ${front} (windward) — natural ventilation priority`,
+      `Bedrooms on ${coolSide} — cross-ventilation for sleep comfort`,
+      `Kitchen on ${back} (leeward) — exhaust cooking heat downwind`,
+      `Service spaces on ${hotSide} — wind barrier on storm side`,
     ],
     cold: [
-      'Living/dining on south — maximize solar warmth',
-      'Bedrooms on east/southeast — morning sun warmth',
-      'Kitchen on east — morning light, less heating needed',
-      'Garage/mudroom on north — cold buffer zone',
+      `Living/dining on ${front} — maximize solar warmth`,
+      `Bedrooms on ${coolSide} — morning sun warmth`,
+      `Kitchen on ${coolSide} — morning light, less heating needed`,
+      `Garage/mudroom on ${back} — cold buffer zone`,
     ],
     temperate: [
-      'Living/dining on south — best year-round daylight',
-      'Kitchen on east or south — morning to midday light',
-      'Bedrooms flexible — east for morning sun, north for quiet',
-      'Service spaces on least favorable facade',
+      `Living/dining on ${front} — best year-round daylight`,
+      `Kitchen on ${front}/${coolSide} — morning to midday light`,
+      `Bedrooms flexible — ${coolSide} for morning sun, ${back} for quiet`,
+      `Service spaces on ${hotSide} — least favorable facade`,
     ],
   }
 
@@ -1181,8 +1198,8 @@ function generateSiteDesign(summary, elevData, slopeData, floodData, wetlandsDat
     orientation_degrees: orientDeg,
     orientation_reason: orientReason,
     orientation_scores: orientations.slice(0, 4).map(o => ({ label: o.label, score: o.score })),
-    window_strategy: windowMap[climate] || windowMap.temperate,
-    room_zoning: roomMap[climate] || roomMap.temperate,
+    window_strategy: windowRules[climate] || windowRules.temperate,
+    room_zoning: roomRules[climate] || roomRules.temperate,
     driveway_access: `Approach from ${flattest[0]} edge (${flattest[1].toFixed(1)}% avg slope) — flattest access grade`,
     climate_zone: climate,
   }
