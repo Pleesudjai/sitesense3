@@ -1384,25 +1384,41 @@ function expertResult(name, verdict, reasons, risks, opportunities, confidence, 
 }
 
 // Shared: call Claude as a specialist expert
-async function callExpertLLM(expertName, systemPrompt, evidence, schema) {
+// NEW PATTERN: receives ruleFindings so Claude EXTENDS them instead of starting from scratch
+async function callExpertLLM(expertName, systemPrompt, evidence, schema, ruleFindings) {
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return null  // fall back to rule-based
+  if (!apiKey) return null
 
   try {
     const client = new Anthropic({ apiKey })
+
+    // Build prompt that gives Claude the rule-based findings to extend
+    let prompt = systemPrompt
+    if (ruleFindings) {
+      prompt += `\n\nRULE-BASED FINDINGS (already computed by deterministic code — do NOT repeat these, EXTEND them):
+${JSON.stringify(ruleFindings, null, 2)}
+
+Your job is to:
+1. Accept all rule-based findings as given (they are computed from real data)
+2. Look for ADDITIONAL compound risks the rules missed — interactions between signals that require cross-domain reasoning
+3. Add richer explanations that connect multiple evidence fields
+4. Identify non-obvious implications a homeowner would miss
+5. Return the COMBINED result: rule findings + your additions merged together
+6. Mark your additions with [AI INSIGHT] prefix so we can distinguish them from rule-based findings`
+    }
+
+    prompt += `\n\nEVIDENCE:\n${JSON.stringify(evidence, null, 2)}\n\nRespond with ONLY valid JSON matching this schema:\n${JSON.stringify(schema)}`
+
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 600,
-      messages: [{
-        role: 'user',
-        content: `${systemPrompt}\n\nEVIDENCE:\n${JSON.stringify(evidence, null, 2)}\n\nRespond with ONLY valid JSON matching this schema:\n${JSON.stringify(schema)}`
-      }],
+      max_tokens: 800,
+      messages: [{ role: 'user', content: prompt }],
     })
     const text = msg.content[0].text
     return JSON.parse(text)
   } catch (e) {
     console.warn(`${expertName} LLM call failed:`, e.message)
-    return null  // fall back to rule-based
+    return null
   }
 }
 
@@ -1413,25 +1429,8 @@ async function runFoundationAdvisor(ep) {
   const flood = ep.retrieval?.flood || {}
   const fnd = ep.computed?.foundation || {}
 
-  // Try Claude first
-  const llmResult = await callExpertLLM(
-    'foundation-advisor',
-    `You are a geotechnical and foundation specialist reviewing screening-level site data for early feasibility. You are NOT designing a foundation — you are flagging risks, estimating cost impact, and identifying what professional investigation is still needed.
-
-DOCTRINE:
-- IBC 2021 §1806 Table 1806.2: Presumptive bearing by soil type
-- ACI 360R-10 §5.4: PT slab for expansive soils (PI > 25 or shrink-swell High)
-- ACI 360R-10 §4.2: Grade beams for caliche/hardpan
-- ASCE 7-22 Ch.5: Elevated foundations in flood zones AE/VE
-- IBC §1803.5.5: Deep foundations for organic/peat soils
-
-Analyze the soil, slope, and flood data. Identify foundation risks, cost implications, and what the owner should verify with a geotechnical engineer.`,
-    { soil, slope, flood, foundation: fnd },
-    { expert: 'foundation-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
-  )
-  if (llmResult) return { ...llmResult, expert: 'foundation-advisor', evidence_refs: ['retrieval.soil', 'computed.slope', 'retrieval.flood', 'computed.foundation'] }
-
-  // Existing rule-based fallback
+  // STEP 1: Always run rules first (compound risk detection)
+  // (rule-based code below runs, then Claude EXTENDS if API key available)
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1537,34 +1536,39 @@ Analyze the soil, slope, and flood data. Identify foundation risks, cost implica
 
   const conf = soil.confidence === 'fallback' ? 'low' : soil.confidence === 'verified' ? 'high' : 'estimated'
 
-  return expertResult('foundation-advisor', verdict, reasons, risks, opps, conf, unknowns, checks, refs)
+  const ruleResult = expertResult('foundation-advisor', verdict, reasons, risks, opps, conf, unknowns, checks, refs)
+
+  // STEP 2: Try Claude to EXTEND the rule findings (not replace them)
+  const llmResult = await callExpertLLM(
+    'foundation-advisor',
+    `You are a geotechnical/foundation specialist. The rule-based system has already identified risks from the data. Your job is to find ADDITIONAL compound risks the rules missed and add richer explanations. Mark your additions with [AI INSIGHT].
+
+DOCTRINE: IBC 2021 §1806, ACI 360R-10 §5.4/§4.2, ASCE 7-22 Ch.5, IBC §1803.5.5`,
+    { soil, slope, flood, foundation: fnd },
+    { expert: 'foundation-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] },
+    ruleResult
+  )
+  if (llmResult) {
+    // Merge: keep rule findings, add AI insights
+    return {
+      ...ruleResult,
+      verdict: llmResult.verdict || ruleResult.verdict,
+      reasons: [...ruleResult.reasons, ...(llmResult.reasons || []).filter(r => r.includes('[AI INSIGHT]'))],
+      risks: [...ruleResult.risks, ...(llmResult.risks || []).filter(r => !ruleResult.risks.includes(r))],
+      opportunities: [...ruleResult.opportunities, ...(llmResult.opportunities || []).filter(r => !ruleResult.opportunities.includes(r))],
+      unknowns: [...new Set([...ruleResult.unknowns, ...(llmResult.unknowns || [])])],
+    }
+  }
+  return ruleResult
 }
 
 async function runStormwaterReviewer(ep) {
   const flood = ep.retrieval?.flood || {}
   const soil = ep.retrieval?.soil || {}
-  const precip = ep.retrieval?.precipitation || {}
   const runoff = ep.computed?.runoff || {}
   const slope = ep.computed?.slope || {}
 
-  // Try Claude first
-  const llmResult = await callExpertLLM(
-    'stormwater-reviewer',
-    `You are a civil/drainage engineer reviewing screening-level stormwater data. You are NOT designing a drainage system — you are flagging drainage difficulty, detention requirements, and flood risk.
-
-DOCTRINE:
-- FEMA flood zones: AE/VE require elevated construction and flood insurance
-- Hydrologic Soil Group D: very slow infiltration, detention likely required
-- Rational Method Q=CiA for preliminary runoff estimation
-- Local jurisdictions control final drainage design requirements
-
-Analyze flood zone, soil HSG, runoff data, and slope. Identify drainage risks, detention burden, and what civil engineer verification is needed.`,
-    { flood, soil_hsg: soil.hydrologic_group, precipitation: precip, runoff, slope },
-    { expert: 'stormwater-reviewer', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
-  )
-  if (llmResult) return { ...llmResult, expert: 'stormwater-reviewer', evidence_refs: ['retrieval.flood', 'retrieval.soil.hydrologic_group', 'computed.runoff', 'computed.slope'] }
-
-  // Existing rule-based fallback
+  // STEP 1: Always run rules first
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1619,7 +1623,26 @@ Analyze flood zone, soil HSG, runoff data, and slope. Identify drainage risks, d
   unknowns.push('Local drainage requirements not verified with jurisdiction')
   checks.push('Verify stormwater requirements with local civil review')
 
-  return expertResult('stormwater-reviewer', verdict, reasons, risks, opps, soil.confidence || 'estimated', unknowns, checks, refs)
+  const ruleResult = expertResult('stormwater-reviewer', verdict, reasons, risks, opps, soil.confidence || 'estimated', unknowns, checks, refs)
+
+  // STEP 2: Try Claude to EXTEND the rule findings (not replace them)
+  const llmResult = await callExpertLLM(
+    'stormwater-reviewer',
+    'You are a civil/drainage engineer. Rules have identified drainage risks. Find ADDITIONAL compound risks the rules missed. Mark additions with [AI INSIGHT].\n\nDOCTRINE: FEMA zones, HSG classification, Rational Method Q=CiA',
+    { flood, soil_hsg: soil.hydrologic_group, runoff, slope },
+    { expert: 'stormwater-reviewer', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] },
+    ruleResult
+  )
+  if (llmResult) {
+    return {
+      ...ruleResult,
+      verdict: llmResult.verdict || ruleResult.verdict,
+      reasons: [...ruleResult.reasons, ...(llmResult.reasons || []).filter(r => r.includes('[AI INSIGHT]'))],
+      risks: [...ruleResult.risks, ...(llmResult.risks || []).filter(r => !ruleResult.risks.includes(r))],
+      unknowns: [...new Set([...ruleResult.unknowns, ...(llmResult.unknowns || [])])]
+    }
+  }
+  return ruleResult
 }
 
 async function runSiteDesignAdvisor(ep) {
@@ -1627,18 +1650,7 @@ async function runSiteDesignAdvisor(ep) {
   const slope = ep.computed?.slope || {}
   const parcel = ep.parcel || {}
 
-  // Try Claude first
-  const llmResult = await callExpertLLM(
-    'site-design-advisor',
-    `You are a site planning specialist reviewing buildable envelope data. You are NOT creating a site plan — you are evaluating how much of the parcel is realistically usable and what constraints affect placement.
-
-Analyze buildable area percentage, slope constraints, and setback assumptions. Identify design flexibility, constraint severity, and what zoning verification is needed. Consider whether a compact or spread concept works better.`,
-    { buildable_area: buildable, slope, parcel },
-    { expert: 'site-design-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
-  )
-  if (llmResult) return { ...llmResult, expert: 'site-design-advisor', evidence_refs: ['computed.buildable_area', 'computed.slope', 'parcel'] }
-
-  // Existing rule-based fallback
+  // STEP 1: Always run rules first
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1687,30 +1699,33 @@ Analyze buildable area percentage, slope constraints, and setback assumptions. I
   unknowns.push('Setbacks estimated — actual zoning setbacks not yet verified')
   checks.push('Verify setbacks and zoning with local jurisdiction')
 
-  return expertResult('site-design-advisor', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+  const ruleResult = expertResult('site-design-advisor', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+
+  // STEP 2: Try Claude to EXTEND the rule findings (not replace them)
+  const llmResult = await callExpertLLM(
+    'site-design-advisor',
+    'You are a site planning specialist. Rules have evaluated buildable area. Find ADDITIONAL design constraints or opportunities the rules missed. Mark additions with [AI INSIGHT].',
+    { buildable_area: buildable, slope, parcel },
+    { expert: 'site-design-advisor', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] },
+    ruleResult
+  )
+  if (llmResult) {
+    return {
+      ...ruleResult,
+      verdict: llmResult.verdict || ruleResult.verdict,
+      reasons: [...ruleResult.reasons, ...(llmResult.reasons || []).filter(r => r.includes('[AI INSIGHT]'))],
+      risks: [...ruleResult.risks, ...(llmResult.risks || []).filter(r => !ruleResult.risks.includes(r))],
+      unknowns: [...new Set([...ruleResult.unknowns, ...(llmResult.unknowns || [])])]
+    }
+  }
+  return ruleResult
 }
 
 async function runCostForecaster(ep) {
   const costs = ep.computed?.costs || {}
   const fnd = ep.computed?.foundation || {}
 
-  // Try Claude first
-  const llmResult = await callExpertLLM(
-    'cost-forecaster',
-    `You are a construction cost analyst reviewing ROM site preparation estimates. You are NOT providing a contractor bid — you are identifying cost drivers, comparing build-now vs wait, and flagging where estimates are uncertain.
-
-DOCTRINE:
-- ENR CCI 4.5%/year historical construction inflation
-- BEA Regional Price Parities for location adjustment
-- Foundation cost premiums by type (conventional $8-15/SF, PT $14-22/SF, pile $45-80/SF)
-
-Analyze cost breakdown, regional multiplier, foundation premium, and inflation projection. Identify the top cost drivers and whether timing matters.`,
-    { costs, foundation: fnd },
-    { expert: 'cost-forecaster', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] }
-  )
-  if (llmResult) return { ...llmResult, expert: 'cost-forecaster', evidence_refs: ['computed.costs', 'computed.foundation'] }
-
-  // Existing rule-based fallback
+  // STEP 1: Always run rules first
   const risks = [], reasons = [], opps = [], unknowns = [], checks = [], refs = []
   let verdict = 'low_risk'
 
@@ -1763,7 +1778,26 @@ Analyze cost breakdown, regional multiplier, foundation premium, and inflation p
   unknowns.push('Contractor bid pricing not included — ROM estimate only')
   checks.push('Obtain competitive bids from at least 3 contractors')
 
-  return expertResult('cost-forecaster', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+  const ruleResult = expertResult('cost-forecaster', verdict, reasons, risks, opps, 'estimated', unknowns, checks, refs)
+
+  // STEP 2: Try Claude to EXTEND the rule findings (not replace them)
+  const llmResult = await callExpertLLM(
+    'cost-forecaster',
+    'You are a construction cost analyst. Rules have computed ROM estimates and compound premiums. Find ADDITIONAL cost drivers or timing insights the rules missed. Mark additions with [AI INSIGHT].\n\nDOCTRINE: ENR CCI 4.5%/yr, BEA RPP regional factors',
+    { costs, foundation: fnd, slope: ep.computed?.slope, flood: ep.retrieval?.flood },
+    { expert: 'cost-forecaster', verdict: 'low_risk|moderate_risk|high_risk', reasons: ['...'], risks: ['...'], opportunities: ['...'], confidence: 'high|estimated|low', unknowns: ['...'], next_checks: ['...'] },
+    ruleResult
+  )
+  if (llmResult) {
+    return {
+      ...ruleResult,
+      verdict: llmResult.verdict || ruleResult.verdict,
+      reasons: [...ruleResult.reasons, ...(llmResult.reasons || []).filter(r => r.includes('[AI INSIGHT]'))],
+      risks: [...ruleResult.risks, ...(llmResult.risks || []).filter(r => !ruleResult.risks.includes(r))],
+      unknowns: [...new Set([...ruleResult.unknowns, ...(llmResult.unknowns || [])])]
+    }
+  }
+  return ruleResult
 }
 
 function routeExperts(ep) {
@@ -1799,26 +1833,7 @@ function routeExperts(ep) {
 }
 
 async function runParcelStrategist(ep, expertFindings) {
-  // Try Claude first
-  const llmResult = await callExpertLLM(
-    'parcel-strategist',
-    `You are the lead parcel strategist synthesizing findings from multiple domain specialists. You are NOT approving the site — you are forming one clear feasibility judgment.
-
-You receive findings from: foundation advisor, stormwater reviewer, site design advisor, and cost forecaster. Merge their verdicts into one parcel-level assessment.
-
-Identify:
-1. Overall verdict (Good Candidate / Proceed with Caution / High Risk)
-2. The 2-3 most important factors across all specialists
-3. Key tradeoffs where competing signals create tension
-4. What the owner/architect should do next
-
-Be specific — reference the actual data values from the specialist findings.`,
-    { parcel: ep.parcel, expert_findings: expertFindings },
-    { verdict: 'Good Candidate|Proceed with Caution|High Risk', verdict_reason: '...', top_reasons: ['...'], top_risks: ['...'], top_opportunities: ['...'], tradeoffs: ['...'], unknowns: ['...'], next_steps: [{ action: '...', who: '...', why: '...' }] }
-  )
-  if (llmResult) return llmResult
-
-  // Existing rule-based fallback
+  // STEP 1: Always run rules first
   // Merge all expert verdicts into one parcel-level verdict
   const verdicts = expertFindings.map(e => e.verdict)
   const hasHigh = verdicts.includes('high_risk')
@@ -1888,7 +1903,7 @@ Be specific — reference the actual data values from the specialist findings.`,
         ? `Site is buildable but some conditions may increase costs: ${topIssues}`
         : 'No major risk factors detected — site appears suitable for standard construction'
 
-  return {
+  const ruleStrategyResult = {
     verdict, verdict_reason: verdictReason,
     top_reasons: allReasons.slice(0, 3),
     top_risks: allRisks.slice(0, 3),
@@ -1900,6 +1915,25 @@ Be specific — reference the actual data values from the specialist findings.`,
       return { action, who: expertSource?.expert?.replace(/-/g, ' ') || 'Professional', why: `Recommended by ${expertSource?.expert || 'analysis'}` }
     }),
   }
+
+  // STEP 2: Try Claude to EXTEND the rule findings (not replace them)
+  const llmResult = await callExpertLLM(
+    'parcel-strategist',
+    'You are the lead parcel strategist. The rule-based system has produced a verdict and tradeoffs from expert findings. Your job is to find ADDITIONAL cross-domain insights, non-obvious tradeoffs, and richer explanations. Write for a homeowner. Mark additions with [AI INSIGHT].',
+    { parcel: ep.parcel, expert_findings: expertFindings },
+    { verdict: 'Good Candidate|Proceed with Caution|High Risk', verdict_reason: '...', top_reasons: ['...'], top_risks: ['...'], top_opportunities: ['...'], tradeoffs: ['...'], unknowns: ['...'], next_steps: [{ action: '...', who: '...', why: '...' }] },
+    ruleStrategyResult
+  )
+  if (llmResult) {
+    return {
+      ...ruleStrategyResult,
+      verdict: llmResult.verdict || ruleStrategyResult.verdict,
+      verdict_reason: llmResult.verdict_reason || ruleStrategyResult.verdict_reason,
+      tradeoffs: [...ruleStrategyResult.tradeoffs, ...(llmResult.tradeoffs || []).filter(t => !ruleStrategyResult.tradeoffs.includes(t))],
+      top_reasons: llmResult.top_reasons?.length > 0 ? llmResult.top_reasons : ruleStrategyResult.top_reasons,
+    }
+  }
+  return ruleStrategyResult
 }
 
 function runDataQualityAuditor(ep, strategistResult) {
