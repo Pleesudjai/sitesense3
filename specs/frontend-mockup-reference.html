@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>Land Intel | SiteSense Workspace</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-tertiary-container": "#d29895",
+            "tertiary-fixed": "#ffdad8",
+            "outline-variant": "#c1c8c2",
+            "primary-fixed": "#b1f0ce",
+            "background": "#f7fafc",
+            "surface-dim": "#d7dadc",
+            "on-secondary-container": "#586377",
+            "surface-container-low": "#f1f4f6",
+            "on-tertiary-fixed": "#331111",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed-variant": "#3c475a",
+            "error": "#ba1a1a",
+            "tertiary-fixed-dim": "#f5b7b4",
+            "error-container": "#ffdad6",
+            "secondary-container": "#d5e0f7",
+            "tertiary-container": "#5a302f",
+            "tertiary": "#401b1b",
+            "on-tertiary-fixed-variant": "#673a39",
+            "on-tertiary": "#ffffff",
+            "surface-container": "#ebeef0",
+            "primary-fixed-dim": "#95d4b3",
+            "surface": "#f7fafc",
+            "surface-container-high": "#e5e9eb",
+            "on-secondary": "#ffffff",
+            "inverse-primary": "#95d4b3",
+            "on-primary": "#ffffff",
+            "primary": "#002d1c",
+            "secondary-fixed": "#d8e3fa",
+            "inverse-on-surface": "#eef1f3",
+            "surface-variant": "#e0e3e5",
+            "on-secondary-fixed": "#111c2c",
+            "surface-tint": "#2c694e",
+            "on-background": "#181c1e",
+            "outline": "#717973",
+            "surface-bright": "#f7fafc",
+            "inverse-surface": "#2d3133",
+            "secondary": "#545f72",
+            "secondary-fixed-dim": "#bcc7dd",
+            "on-primary-container": "#76b394",
+            "on-surface": "#181c1e",
+            "on-surface-variant": "#414844",
+            "on-error-container": "#93000a",
+            "on-primary-fixed": "#002114",
+            "on-error": "#ffffff",
+            "primary-container": "#00452e",
+            "on-primary-fixed-variant": "#0e5138",
+            "surface-container-highest": "#e0e3e5"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }
+        }
+      }
+    }
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      vertical-align: middle;
+    }
+    .map-mesh {
+      background-image: radial-gradient(circle at 2px 2px, rgba(0,0,0,0.05) 1px, transparent 0);
+      background-size: 24px 24px;
+    }
+  </style>
+</head>
+<body class="bg-background font-body text-on-background overflow-hidden">
+  <header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md shadow-sm dark:shadow-none">
+    <div class="flex items-center gap-8">
+      <span class="text-xl font-black tracking-tight text-emerald-950 dark:text-emerald-50 font-headline">Land Intel</span>
+      <div class="hidden md:flex items-center bg-surface-container-high px-3 py-1.5 rounded-lg w-80">
+        <span class="material-symbols-outlined text-on-surface-variant mr-2" style="font-size: 1.2rem;">search</span>
+        <input class="bg-transparent border-none focus:ring-0 text-sm w-full font-label text-on-surface" placeholder="Search addresses/parcel IDs" type="text"/>
+      </div>
+      <nav class="hidden md:flex items-center gap-6">
+        <a class="font-label text-sm text-slate-500 dark:text-slate-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors" href="#">Projects</a>
+        <a class="font-label text-sm text-emerald-900 dark:text-emerald-400 border-b-2 border-emerald-900 dark:border-emerald-400 pb-1" href="#">Analysis</a>
+        <a class="font-label text-sm text-slate-500 dark:text-slate-400 hover:text-emerald-800 dark:hover:text-emerald-200 transition-colors" href="#">Market</a>
+      </nav>
+    </div>
+    <div class="flex items-center gap-4">
+      <button class="flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary-container rounded hover:bg-opacity-90 transition-all font-label text-xs font-bold uppercase tracking-wider">
+        <span class="material-symbols-outlined" style="font-size: 1.2rem;">download</span>
+        Export
+      </button>
+      <button class="flex items-center gap-2 px-4 py-2 text-on-surface-variant hover:bg-slate-100/50 transition-colors font-label text-xs font-bold">
+        <span class="material-symbols-outlined" style="font-size: 1.2rem;">share</span>
+        Share
+      </button>
+      <div class="flex items-center gap-2 ml-4 border-l border-outline-variant/30 pl-4">
+        <span class="material-symbols-outlined text-on-surface-variant hover:bg-slate-100/50 p-2 rounded cursor-pointer">notifications</span>
+        <span class="material-symbols-outlined text-on-surface-variant hover:bg-slate-100/50 p-2 rounded cursor-pointer">settings</span>
+        <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-outline-variant/20 ml-2">
+          <img alt="User profile" class="w-full h-full object-cover" data-alt="Close up portrait of a professional user" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD064Ohp0R-7uvfkWDSNGF_JUMRWMMgcrmb0vwmy8jWmZGePtoBQTydgNMvS520THHe_lGWMqkMV6h6fZ38BlHHO584goRnHvC-cslzbgOU9SsLtawEWFVl63HR-fSjH0lKU4wUYYy0oxVjoaKhYaHfS6MiGmcPFG57lvzucZiW1i1juitVtNUWzy3pNCozI7tD4fV0uzbQX9uNMWqzwhfBz3xM0hLyH8Jn6yli77krV5SJDPcsU7lvrwx0c-UrwFGk5NOtHlXGotlk"/>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="relative h-screen pt-16 flex">
+    <div class="flex-grow relative bg-surface-dim overflow-hidden">
+      <div class="absolute inset-0 z-0 grayscale-[20%] contrast-[110%]" data-location="Pinecrest Way, US">
+        <img alt="Satellite imagery of forest and parcels" class="w-full h-full object-cover" data-alt="Satellite top-down view of rural green land with property lines" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAze4DP6x-9NqoHiJJ4gO0os80zT11gj5fk5UNERrzhqT1PuwigneuZpsX8QSyevUMgclNz3KdxGpdK5QVIrV3j4b0n_OjzX8TeOOfgD3WCFGQ4PTda9s5TVTn28DgqKQEnZa379RQQa7Y6MtI3GXaRoECqmUQhixomJrN-ICUhFsiBWJxWlwyQuxUsJI1LHaxUQ_p7r_t0xSlMMbRSvk3SlhdhTcNc2zyEXRnCaJQU94WN6DuFYJ1mklDM2A7lUxp6l9HczpNJUrux"/>
+        <svg class="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none" viewBox="0 0 1000 1000">
+          <path d="M100,100 L400,150 L380,450 L80,400 Z" fill="transparent" stroke="rgba(255,255,255,0.4)" stroke-width="2"></path>
+          <path d="M400,150 L750,200 L700,500 L380,450 Z" fill="transparent" stroke="rgba(255,255,255,0.4)" stroke-width="2"></path>
+          <path class="pointer-events-auto cursor-pointer" d="M380,450 L700,500 L650,850 L300,800 Z" fill="rgba(177, 240, 206, 0.4)" stroke="#b1f0ce" stroke-dasharray="8 4" stroke-width="4"></path>
+        </svg>
+        <div class="absolute top-[65%] left-[50%] -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+          <div class="bg-surface-container-lowest shadow-xl p-3 rounded-lg flex flex-col gap-1 border-l-4 border-primary-fixed">
+            <span class="text-[0.6rem] font-bold uppercase tracking-widest text-on-surface-variant font-label">Selected Parcel</span>
+            <span class="text-sm font-headline font-bold text-on-surface">ID: 102-44</span>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="bg-error-container text-on-error-container text-[0.6rem] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-tight">High Risk</span>
+              <span class="text-[0.6rem] text-on-surface-variant font-label">12.4 Acres</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="absolute top-6 left-6 z-10 flex flex-col gap-2">
+        <div class="bg-surface-variant/70 backdrop-blur-md rounded-lg shadow-lg overflow-hidden flex flex-col border border-outline-variant/20">
+          <button class="p-2.5 hover:bg-white/40 transition-colors border-b border-outline-variant/10">
+            <span class="material-symbols-outlined text-on-surface-variant">add</span>
+          </button>
+          <button class="p-2.5 hover:bg-white/40 transition-colors">
+            <span class="material-symbols-outlined text-on-surface-variant">remove</span>
+          </button>
+        </div>
+        <div class="bg-surface-variant/70 backdrop-blur-md rounded-lg shadow-lg p-2.5 border border-outline-variant/20 hover:bg-white/40 cursor-pointer">
+          <span class="material-symbols-outlined text-on-surface-variant">layers</span>
+        </div>
+        <div class="bg-surface-variant/70 backdrop-blur-md rounded-lg shadow-lg p-2.5 border border-outline-variant/20 hover:bg-white/40 cursor-pointer">
+          <span class="material-symbols-outlined text-on-surface-variant">near_me</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="fixed right-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 w-96 shadow-xl transition-all">
+      <div class="p-6 bg-surface-container-low flex items-center gap-4">
+        <div class="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 shadow-sm">
+          <img alt="Property Preview" class="w-full h-full object-cover" data-alt="Satellite crop of the specific green parcel" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKWZae2oW7BweyZ3Sn1SDWsgzg97ox7Sfaesftxt7950HqiNS-WCiUR3_iDbkn40hWJgfZFnErnGNVEpSmmINE0O3M1TTzTomappepdD1vdArtUs8WI566HAjlsqWygEwwITxVfe_vnlXhVg61UO8bGFhdTeOO1uLjzyao3nRgEZodeZLSY7tVIRnTUZQaKDQpio8aTd56lNyh_KvhusoCDmlNgIxyplZkKFOQrZM3iX_VdiCXa89e3k3Uf8nLyQ6yACEhMMfMD3NR"/>
+        </div>
+        <div class="flex flex-col">
+          <span class="text-xs font-label uppercase tracking-widest text-on-surface-variant">Parcel ID: 102-44</span>
+          <h2 class="text-xl font-headline font-extrabold text-emerald-900 leading-tight">123 Pinecrest Way</h2>
+          <span class="text-[0.6875rem] font-label text-slate-500 font-medium">Active Inspector</span>
+        </div>
+      </div>
+
+      <div class="flex overflow-x-auto border-b border-outline-variant/10 bg-surface-container-low px-4">
+        <button class="px-4 py-3 text-[0.6875rem] font-bold uppercase tracking-wider text-emerald-900 border-b-2 border-emerald-900">Overview</button>
+        <button class="px-4 py-3 text-[0.6875rem] font-bold uppercase tracking-wider text-slate-500 hover:text-emerald-800">Constraints</button>
+        <button class="px-4 py-3 text-[0.6875rem] font-bold uppercase tracking-wider text-slate-500 hover:text-emerald-800">Terrain</button>
+        <button class="px-4 py-3 text-[0.6875rem] font-bold uppercase tracking-wider text-slate-500 hover:text-emerald-800">Water</button>
+      </div>
+
+      <div class="flex-grow overflow-y-auto p-6 space-y-8 scroll-smooth">
+        <section>
+          <h3 class="text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface-variant mb-4 font-label">Property Metadata</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-surface-container-lowest p-3 rounded shadow-sm">
+              <span class="block text-[0.625rem] text-slate-400 font-label uppercase mb-1">Acreage</span>
+              <span class="text-sm font-headline font-extrabold text-on-surface">12.44 Acres</span>
+            </div>
+            <div class="bg-surface-container-lowest p-3 rounded shadow-sm">
+              <span class="block text-[0.625rem] text-slate-400 font-label uppercase mb-1">Zoning</span>
+              <span class="text-sm font-headline font-extrabold text-on-surface">R-1 Residential</span>
+            </div>
+            <div class="bg-surface-container-lowest p-3 rounded shadow-sm col-span-2">
+              <span class="block text-[0.625rem] text-slate-400 font-label uppercase mb-1">Current Owner</span>
+              <span class="text-sm font-headline font-extrabold text-on-surface">Pinecrest Holdings, LLC</span>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface-variant font-label">Critical Risk Analysis</h3>
+            <span class="text-[0.6rem] bg-error-container text-on-error-container px-2 py-0.5 rounded-sm font-black">HIGH RISK PROFILE</span>
+          </div>
+          <div class="space-y-4">
+            <div class="relative overflow-hidden group">
+              <div class="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+              <div class="bg-surface-container-lowest p-4 pl-6 rounded shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-start justify-between">
+                  <div class="flex flex-col">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="material-symbols-outlined text-error" style="font-size: 1rem;">water_damage</span>
+                      <h4 class="text-sm font-extrabold text-on-surface font-headline">Flood Risk</h4>
+                    </div>
+                    <p class="text-[0.6875rem] text-on-surface-variant font-label leading-relaxed">Property overlaps with FEMA Zone AE.</p>
+                  </div>
+                  <span class="text-[0.6rem] font-bold px-2 py-1 bg-error-container text-on-error-container rounded-sm uppercase tracking-tighter">High</span>
+                </div>
+                <div class="mt-3 bg-surface-container p-2 rounded-sm text-[0.625rem] text-on-surface-variant flex items-center gap-2">
+                  <span class="material-symbols-outlined text-[0.8rem]">info</span>
+                  <span>Requires specific construction permits and mitigation.</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="relative overflow-hidden group">
+              <div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+              <div class="bg-surface-container-lowest p-4 pl-6 rounded shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-start justify-between">
+                  <div class="flex flex-col">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="material-symbols-outlined text-primary-container" style="font-size: 1rem;">grass</span>
+                      <h4 class="text-sm font-extrabold text-on-surface font-headline">Wetlands</h4>
+                    </div>
+                    <p class="text-[0.6875rem] text-on-surface-variant font-label leading-relaxed">Minimal wetland presence detected.</p>
+                  </div>
+                  <span class="text-[0.6rem] font-bold px-2 py-1 bg-primary-fixed text-on-primary-fixed-variant rounded-sm uppercase tracking-tighter">Low</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="bg-surface-container p-4 rounded-lg">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-secondary" style="font-size: 1.2rem;">terrain</span>
+            <h3 class="text-[0.6875rem] font-bold uppercase tracking-widest text-on-surface font-label">Terrain Profile</h3>
+          </div>
+          <div class="flex items-end justify-between gap-1 h-12 mb-2">
+            <div class="w-full bg-slate-300 h-[20%] rounded-t-sm"></div>
+            <div class="w-full bg-slate-400 h-[40%] rounded-t-sm"></div>
+            <div class="w-full bg-emerald-700 h-[85%] rounded-t-sm"></div>
+            <div class="w-full bg-slate-400 h-[60%] rounded-t-sm"></div>
+            <div class="w-full bg-slate-300 h-[30%] rounded-t-sm"></div>
+            <div class="w-full bg-slate-200 h-[10%] rounded-t-sm"></div>
+          </div>
+          <div class="flex justify-between text-[0.6rem] text-on-surface-variant font-medium">
+            <span>Min: 210ft</span>
+            <span>Avg Slope: 8%</span>
+            <span>Max: 345ft</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="p-6 bg-white dark:bg-slate-900 border-t border-outline-variant/10">
+        <button class="w-full bg-emerald-900 hover:bg-emerald-950 text-white font-headline font-bold py-4 rounded-sm transition-all transform active:scale-95 text-sm tracking-tight flex items-center justify-center gap-2">
+          <span class="material-symbols-outlined" style="font-size: 1.2rem;">description</span>
+          Generate Full Report
+        </button>
+      </div>
+    </aside>
+
+    <nav class="fixed left-0 top-16 h-[calc(100vh-4rem)] w-16 bg-surface-container-lowest border-r border-outline-variant/10 z-30 flex flex-col items-center py-6 gap-6">
+      <div class="p-2 rounded bg-primary-container text-white cursor-pointer">
+        <span class="material-symbols-outlined">map</span>
+      </div>
+      <div class="p-2 rounded text-on-surface-variant hover:bg-slate-100 cursor-pointer">
+        <span class="material-symbols-outlined">analytics</span>
+      </div>
+      <div class="p-2 rounded text-on-surface-variant hover:bg-slate-100 cursor-pointer">
+        <span class="material-symbols-outlined">folder</span>
+      </div>
+      <div class="p-2 rounded text-on-surface-variant hover:bg-slate-100 cursor-pointer">
+        <span class="material-symbols-outlined">history</span>
+      </div>
+      <div class="mt-auto p-2 rounded text-on-surface-variant hover:bg-slate-100 cursor-pointer">
+        <span class="material-symbols-outlined">help</span>
+      </div>
+    </nav>
+  </main>
+</body>
+</html>

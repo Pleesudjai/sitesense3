@@ -163,3 +163,27 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `src/frontend/src/api.js` — predictPrice()
 - `netlify.toml` — redirect + timeout for price_predict
 **Next:** End-to-end test all 4 tabs, set ANTHROPIC_API_KEY, pitch deck
+
+---
+
+## 2026-03-21 — Session 2: National Coverage + Floor Plan Engine + PDF Redesign
+
+**What was built (batched session):**
+
+1. **US-wide coverage:** Replaced Arizona-only code in analyze.js with national data — 15 fire zones (was 4 AZ), 11 wind speed zones (was 3), 35 metro cost multipliers (was 4 AZ cities), expanded caliche detection to full arid Southwest, regional soil defaults for FL/CA/generic. Engineering Q&A prompt expanded to 7 US regions. Map defaults to continental US view.
+
+2. **House Concept improvements:** Removed 3-card layout grid → single Standard layout only. Removed duplicate location inputs → shared from header. Always uses site analysis data when available. Pricing clearly labeled "Total Construction Cost (building + foundation)" vs Site Analysis "Site Preparation Costs".
+
+3. **Floor plan engine rewrite:** Squarified treemap algorithm replacing strip-packing. Zone-based layout (Social front → Corridor → Private back). Architectural details: wall thickness, door gaps with swing arcs, front door with porch, north arrow compass, 10ft scale bar, color-coded by zone. 3D view with compass, scroll-to-zoom, drag-to-rotate.
+
+4. **Price Forecast improvements:** US-wide cost factors (50 states + 40 metros via BEA RPP). Line chart replacing bar chart. Plain-English indicator explanations. Uses House Concept parameters (no duplicate inputs).
+
+5. **PDF report complete redesign:** 4-page user-pain-first approach. Page 1: verdict banner + 4 callout cards + risk traffic-light. Page 2: plain-English constraints with "What to check next" callouts. Page 3: side-by-side cost comparison + build-now-vs-wait + numbered next-steps with WHO to contact. Page 4: 3-column appendix (Parameter/Value/What This Means) with 18 dynamic explanation functions.
+
+6. **Infrastructure fixes:** Tab persistence (hidden CSS instead of unmount). Polygon redraw clears stale results. PDF Report button moved to header. Reverted unnecessary timeout changes (503 was Netlify credit exhaustion, not code).
+
+**Why this approach:** Problem-statement spec defines SiteSense as solving a "late-surprise problem" — users commit before understanding risks. Every feature was evaluated against 4 user pains: buildability, hidden costs, what fits, and what to do next. PDF redesign follows consultancy report patterns (WSP, Arup, Stantec) per the pdf-report-user-first spec.
+
+**Files changed:** analyze.js, house_estimate.js, engineering_assist.js, price_predict.js, App.jsx, MapView.jsx, FloorPlanView.jsx, HouseConceptPanel.jsx, PriceForecastPanel.jsx, CostTable.jsx, ReportGenerator.jsx, ReportButton.jsx, netlify.toml
+
+**Next:** Set ANTHROPIC_API_KEY in new Netlify account, end-to-end test all 4 tabs + PDF, demo prep

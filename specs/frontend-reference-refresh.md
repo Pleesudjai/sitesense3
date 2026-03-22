@@ -5,6 +5,13 @@ Layer: frontend
 ## What We're Building
 Refresh the SiteSense frontend using stronger product references that fit a land feasibility and property intelligence workflow.
 
+Approved mockup reference:
+
+- [frontend-mockup-reference.html](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/frontend-mockup-reference.html)
+
+Claude should treat that file as the approved visual/layout reference supplied by the user.
+It should be used together with this spec and not ignored.
+
 This spec is for:
 
 - frontend product direction
@@ -52,6 +59,23 @@ The frontend should feel like a blend of:
 - `Land id` fits landowner-friendly land intelligence UX
 - `Nearmap PropertyVision` fits measurement, inspection, and site-review workflows
 - `Zillow climate risk` fits clear consumer-facing risk communication
+
+## Approved Visual Source
+
+In addition to the external product references, Claude must also use the user-provided mockup source in:
+
+- [frontend-mockup-reference.html](c:/Users/chidc/ASU%20Dropbox/Mobasher_Group/Hackathon%20ASU%202025/specs/frontend-mockup-reference.html)
+
+That file is important because it captures the exact desired shell direction:
+
+- top application bar
+- map-dominant workspace
+- left utility rail
+- right-side inspector
+- tabbed property review pattern
+- professional client-facing visual tone
+
+If there is any conflict between generic inspiration and the approved mockup, Claude should bias toward the approved mockup while preserving the existing SiteSense live functionality.
 
 ## Reference Products to Study
 
