@@ -351,6 +351,7 @@ export default function App() {
                               </div>
                             </div>
                           </div>
+                          <div className="space-y-2 text-xs mt-2">
                             {result.ai_report.site_design.window_strategy?.length > 0 && (
                               <div>
                                 <span className="text-gray-500">Window strategy:</span>
@@ -370,8 +371,7 @@ export default function App() {
                             <div><span className="text-gray-500">Driveway:</span> <span className="text-gray-400">{result.ai_report.site_design.driveway_access}</span></div>
                           </div>
                         </div>
-                        )
-                      })()}
+                        )})()}
                     </>
                   ) : (
                     // Fallback: render as raw text (backward compatibility)
