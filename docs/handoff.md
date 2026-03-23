@@ -1,73 +1,66 @@
 # Session Handoff
-Date: 2026-03-22 ~2:00 AM
-Focus: AI Brain Architecture, Expert Layer, Compound Risk Detection, National Coverage, PDF Redesign, Floor Plan Engine
+Date: 2026-03-23 ~12:00 AM
+Focus: Brain Feedback Loops, Seismic Fix, Q&A Speed, PDF Report, Hackathon Submission
 
 ## Completed This Session
 
-### Brain Architecture (Domain Brain pattern)
-- `netlify/functions/analyze.js` — Full brain pipeline: evidence_pack assembly → expert router → 6 specialists → strategist → auditor → structured JSON output
-- Rules-first-then-Claude pattern: deterministic rules ALWAYS run, Claude extends with [AI INSIGHT] additions when API key is available
-- 14 compound risk checks across 4 experts (soil+slope, flood+drainage, caliche+slope, seismic+expansive, etc.)
-- Cross-expert tradeoff detection in Parcel Strategist
-- Data Quality Auditor can downgrade verdict when critical data is fallback-level
+### Brain Feedback Loops (4 new)
+- Foundation Advisor → upgrades baseline foundation type + recalculates costs
+- Cost Forecaster → compound premiums (+8-33%) applied to actual total_now
+- Fire Risk → +6-12% cost uplift for High/Very High zones
+- Runoff → NOAA Atlas 14 rainfall + HSG-adjusted C-values
 
-### Evidence Pack
-- `assembleEvidencePack()` builds structured working memory: parcel, retrieval (14 layers with source/confidence/notes), computed, doctrine, assumptions, unknowns, provenance, confidence
-- Every GIS layer has source attribution, query mode, and confidence level
+### Seismic API
+- Fixed dead USGS endpoint → new ASCE 7-22 API
+- LA now SDC D (was incorrectly SDC A)
+- Regional defaults for CA, Pacific NW, New Madrid, Intermountain West
 
-### Data-Driven Site Design
-- 9-zone pad scoring from actual elevation grid (flatness, relief, cut/fill, flood, wetland, soil penalties)
-- 8-direction orientation scoring (terrain aspect 35%, solar 25%, west penalty, parcel shape, access)
-- Climate zone detection → window strategy + room zoning with actual compass directions
-- Driveway access from edge slope analysis
+### Weighted Verdict
+- Expert weights: foundation×3, stormwater×2, site×1, cost×1
+- 4 levels: Good Candidate / Proceed with Caution / Moderate Risk / High Risk
 
-### National Coverage
-- 15 fire zones, 11 wind speed zones, 35 metro cost multipliers, 50 states + 40 metros via BEA RPP
-- Map defaults to continental US, expanded caliche detection, 7 regional Q&A blocks
+### Contour Lines
+- SSURGO WMS renders below contour GeoJSON (was hiding black lines)
+- Density targets 8-15 lines, 6x upsampling for coarse grids
+- Labels use line placement for short mountainous loops
 
-### Floor Plan Engine
-- Squarified treemap, zone-based, site-responsive facade assignment
-- 2D SVG + 3D canvas with zoom/rotate/compass
+### PDF Report (Printable HTML)
+- 2 new pages: AI Brain Analysis + Site Design Recommendations
+- Shows expert findings, compound premiums, fire uplift, data sources
+- Reverted from html2pdf.js to printable HTML (Ctrl+P to save)
 
-### PDF Report Redesign
-- 4-page user-first: verdict + constraints + cost/next-steps + appendix
-- House Concept + Price Forecast pages included when data available
+### Engineering Q&A
+- Switched to Haiku (fast, <10s responses)
+- Slim context (15 fields instead of full analysis)
+- Fixed JSON parsing (markdown fences, nested JSON)
 
-### Presentations
-- `SiteSense_AI_Brain_v2.pptx` — 11 slides
+### Cost Model
+- Priced off ~2,500 SF footprint, not full lot
+- Cut/fill scaled for large parcels
+
+### Infrastructure
+- New repo: github.com/Pleesudjai/sitesense3
+- New Netlify: musical-cuchufli-3cd9f8.netlify.app
+- Time budget prevents Netlify 26s timeout
+- ANTHROPIC_API_KEY set in Netlify dashboard
 
 ## Current State
 
 ### Working end-to-end
-- Site Analysis: draw parcel → 14 GIS → 6 experts → compound risks → structured report
-- House Concept: specs → standard layout + cost + site-responsive floor plan
+- Site Analysis: draw → 15 GIS → 6 experts → compound risks → feedback loops → weighted verdict
+- House Concept: specs → layout + cost + floor plan
 - Build Now or Wait: government indicators → line chart + timing table
-- Engineering Q&A: rule-based answers (6 topics, works without API key)
-- PDF Report: 4-6 page report from all workflows
-
-### Built but untested with Claude API
-- All 6 experts have Claude extension prompts (rules-first-then-Claude)
-- Evidence pack sent to Claude for richer synthesis
-- [AI INSIGHT] tag system ready
+- Engineering Q&A: Haiku-powered, fast responses, code citations
+- PDF Report: printable HTML with AI brain analysis + site design pages
 
 ### Known Issues
+- PDF is printable HTML (Ctrl+P), not direct download — html2pdf.js had rendering issues
+- Engineering Q&A may timeout on very complex questions with large site context
+- Contour labels may not appear on very flat terrain (<5 ft relief)
 - User persona dropdown exists but doesn't change output
-- Elevation results may vary slightly between runs
-- Netlify credits may need new account
-
-## Next Steps (priority order)
-1. Set ANTHROPIC_API_KEY in Netlify → experts upgrade instantly
-2. Test 3 demo addresses end-to-end
-3. Test PDF download for each scenario
-4. Demo rehearsal
 
 ## Deploy Status
-- Netlify: https://ornate-marigold-192751.netlify.app
-- GitHub: https://github.com/Pleesudjai/sitesense
-- ANTHROPIC_API_KEY: [ ] not set — rule-based fallback active
-- Last deploy: 2026-03-22 ~1:40 AM (commit a99bd40)
-
-## Open Questions
-- [ ] Netlify credits — may need new account
-- [ ] TinyFish API key — needs code change for their base URL
-- [ ] User persona personalization not wired
+- **Netlify:** https://musical-cuchufli-3cd9f8.netlify.app
+- **GitHub:** https://github.com/Pleesudjai/sitesense3
+- **ANTHROPIC_API_KEY:** set in Netlify dashboard
+- **Hackathon:** SUBMITTED to HackASU 2025, Track 3
