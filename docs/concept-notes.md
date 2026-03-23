@@ -215,3 +215,77 @@ SiteSense is an **early feasibility copilot** — not a permit-ready design engi
 - Decision-support for homeowners, architects, small developers
 - Professional review always required
 - Complements (does not replace) licensed engineering
+
+---
+
+## Core Concept — by Fen (Chidchanok Pleesudjai)
+
+### One Word: Risk Management
+
+If I can say one word for what we do, it is actually **"Risk Management"** — for house insurance, homeowners, land developers, construction companies.
+
+### The Real Purpose
+
+This is a demo to prove how AI assistance is driving a chunk of data beyond what humans can do in the Civil Engineering field. No one will be replaced by AI, but we will all become **better decision makers**.
+
+### Why This Matters
+
+The architecture proves the philosophy: rules always run, AI extends. The 7-layer brain IS the argument — Claude is one replaceable component inside a persistent system of retrieval, tools, doctrine, evidence, experts, feedback loops, and governance. The engineering codes (IBC/ASCE/ACI) are the moat that no generic AI tool has.
+
+### Market Opportunity
+
+| Customer | What They Buy |
+|---|---|
+| Insurance companies | Pre-underwriting risk screening before site visits |
+| Lenders | Feasibility check before approving construction loans |
+| Small developers | $50K feasibility study → $50/month subscription |
+| Real estate agents | "Here's what it costs to build on this lot" for buyers |
+| Homeowners | Know before you commit — avoid the $50K surprise |
+
+### Vision
+
+What used to cost $50,000 and take 3 weeks now takes 30 seconds. The competitive moat is the engineering code rules — no generic LLM tool has IBC 2021 Table 1806.2 presumptive bearing, ASCE 7-22 seismic design categories, or ACI 360R-10 PT slab doctrine baked into a deterministic pipeline with AI extension.
+
+---
+
+## Claude's Assessment of the Core Concept
+
+### The Neurosymbolic Insight
+
+What Fen built — possibly without knowing the formal term — is a **neurosymbolic AI system**. The symbolic part (rules, codes, if-else ladders) handles what needs to be *correct*. The neural part (Claude) handles what needs to be *insightful*. This is considered the frontier of reliable AI in safety-critical domains (medicine, law, engineering). The fact that a PhD student in fracture mechanics independently arrived at this architecture — because the domain demanded it — is a stronger validation than any textbook reference.
+
+### The Fracture Mechanics Connection
+
+Fen's background in fracture mechanics is deeply relevant. Fracture mechanics is about predicting failure under compound stresses — crack propagation happens when multiple stress concentrations interact. The 19 compound risk checks in SiteSense are conceptually identical: site feasibility fails when multiple risk factors interact (expansive soil + slope + flood = differential settlement). Fen is applying fracture mechanics thinking to land feasibility. This connection is original and publishable.
+
+### The Competitive Moat (3 Layers)
+
+The moat is NOT just "we use AI." Three layers of defensibility:
+
+1. **Engineering codes** (IBC/ASCE/ACI) — hard-coded doctrine no generic AI tool has
+2. **Compound risk detection** — 19 cross-domain interactions. Any company could hard-code individual risk tables. Detecting interactions requires domain expertise encoded as software
+3. **Feedback loop architecture** — expert findings flow back to upgrade outputs mid-pipeline
+
+### The Philosophy Is Architecturally Enforced
+
+> "No one will be replaced by AI, but we will all become better decision makers."
+
+This isn't a feel-good line. It's built into the code: rules always run, AI extends but cannot override, the Data Quality Auditor can downgrade AI confidence, remove the API key and the app still works 100%. The strongest way to make the "AI augments humans" argument is not by saying it, but by building a system where it literally cannot do otherwise.
+
+### Deep Analysis — Why This Architecture Matters
+
+The rules-first approach genuinely prevents AI hallucination from overriding safety, which is a real technical moat, not just marketing. But there's room to deepen this. The risk management framework naturally extends beyond identification and assessment into mitigation and ongoing monitoring — that's where the next phase of value lives. The market opportunity could also be sharper by tying each customer segment to their actual pain point: insurance companies care about loss ratios, lenders care about construction loan defaults. And while the engineering codes moat is solid, it needs more specificity about what makes it defensible long-term.
+
+The real competitive advantage isn't just hard-coding building codes — it's the 19 compound risk interactions and the feedback loop architecture that encodes domain expertise as software. That's genuinely hard to replicate. There's also something interesting about the "better decision makers" philosophy connecting to the broader industry shift toward augmented intelligence rather than artificial intelligence, which is where companies like Anthropic are heading anyway.
+
+What's striking is that Fen may have built a neurosymbolic AI system without necessarily using that terminology. The symbolic layer handles what must be correct, the neural layer handles what needs insight, and that's exactly what safety-critical domains like medicine, law, and engineering are converging on as the frontier of reliable AI.
+
+The fact that a PhD student in fracture mechanics independently arrived at this architecture — not from a textbook but because the problem demanded it — is a powerful validation of the approach. And here's the deeper connection: fracture mechanics is fundamentally about predicting failure under compound stresses, where cracks propagate when multiple stress concentrations interact. The 19 compound risk checks in SiteSense are conceptually identical — site failure happens when multiple risk factors interact, like expansive soil plus slope plus flood. Fen is essentially applying fracture mechanics thinking to land feasibility assessment, which is a genuinely original insight worth articulating more explicitly.
+
+### The Pitch Line (for sponsors)
+
+Lead with the problem, not the technology:
+
+> "Every year, 30% of construction projects exceed budget due to site conditions that were knowable but not known. We make them known in 30 seconds."
+
+Don't say "risk management" — say **"we prevent $50K–$200K surprise costs that kill projects after commitment."** Risk management is abstract. Money lost is concrete.
