@@ -2,7 +2,7 @@
 
 > **SMC Labs · Mobasher Group · Arizona State University**  
 > 🏆 HackASU 2026 — Track 3: Economic Empowerment & Education  
-> Live demo: [ornate-marigold-192751.netlify.app](https://ornate-marigold-192751.netlify.app)
+> Live demo: [musical-cuchufli-3cd9f8.netlify.app](https://musical-cuchufli-3cd9f8.netlify.app)
 
 **"Drop a pin, draw your lot — get a code-compliant feasibility study in 30 seconds."**
 
