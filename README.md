@@ -348,6 +348,12 @@ Foundation advisor upgrades foundation type mid-pipeline → cost forecaster com
 Built by **SMC Labs — Structures, Materials & Composites**  
 Mobasher Group · Arizona State University
 
+| Name | Role | Email |
+|------|------|-------|
+| Prof. Barzin Mobasher | Faculty Advisor · PI, Mobasher Group | [barzin@asu.edu](mailto:barzin@asu.edu) |
+| Chidchanok Pleesudjai | PhD Researcher · Lead Developer | [cpleesud@asu.edu](mailto:cpleesud@asu.edu) |
+| Devansh Patel | PhD Researcher · Developer | [dpatel52@asu.edu](mailto:dpatel52@asu.edu) |
+
 - Stormwater: USDA Rational Method
 - Costs: RSMeans + EPA cost databases with ENR CCI inflation
 - Codes: ACI 318-19, ACI 360R-10, ASCE 7-22, IBC 2021, PTI DC80.3-16, ASTM D4829
