@@ -1,7 +1,7 @@
 # SiteSense — AI-Powered Land Feasibility Tool
 
 > **SMC Labs · Mobasher Group · Arizona State University**  
-> 🏆 HackASU 2026 — Track 3: Economic Empowerment & Education  
+> 🏆 1st Place · HackASU 2026 — Track 3: Economic Empowerment & Education  
 > Live demo: [musical-cuchufli-3cd9f8.netlify.app](https://musical-cuchufli-3cd9f8.netlify.app)
 
 ## Demo Video
