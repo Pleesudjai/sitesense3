@@ -4,6 +4,10 @@
 > 🏆 HackASU 2026 — Track 3: Economic Empowerment & Education  
 > Live demo: [musical-cuchufli-3cd9f8.netlify.app](https://musical-cuchufli-3cd9f8.netlify.app)
 
+## Demo Video
+
+[![SiteSense Demo](https://img.youtube.com/vi/b0yoLrr9vak/maxresdefault.jpg)](https://www.youtube.com/watch?v=b0yoLrr9vak&t=5s)
+
 **"Drop a pin, draw your lot — get a code-compliant feasibility study in 30 seconds."**
 
 What used to cost $10,000–$50,000 and take 3 weeks now takes half a minute. SiteSense democratizes access to civil engineering analysis for homeowners, small developers, and real estate agents making high-stakes land decisions without expensive consultants.
