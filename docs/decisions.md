@@ -229,3 +229,61 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Files changed:** analyze.js (assembleEvidencePack, data-driven generateSiteDesign with 9-zone pad scoring + 8-direction orientation scoring, updated brain pipeline), App.jsx (confidence badges, provenance, assumptions, user persona selector, top_reasons in verdict)
 
 **Next:** Test end-to-end, verify evidence_pack renders correctly, add persona-aware Claude prompt, PDF integration of evidence_pack data
+
+---
+
+## 2026-03-22 — Session 3: Brain Feedback Loops, Seismic Fix, Contour Fix, Q&A Speed, PDF Report
+
+**What was built (batched session):**
+
+1. **Seismic API Fix:** Old USGS endpoint (`/hazard/designmaps/us/json`) was dead (404). Updated to new ASCE 7-22 API (`/ws/designmaps/asce7-22.json`). LA now correctly returns SDC D (Ss=2.25, S1=0.72) instead of SDC A. Added regional seismic defaults for CA, Pacific NW, New Madrid, Intermountain West.
+
+2. **Brain Feedback Loops (4 new):**
+   - Foundation Advisor → upgrades baseline if-else foundation type via keyword matching + severity ranking. Max slope >25% triggers upgrade even when average slope is mild.
+   - Cost Forecaster → compound premiums (+8-33%) feed back into actual `costs.total_now`, not just noted in reasons.
+   - Fire Risk → Very High +12%, High +6% cost uplift applied to site prep estimate with construction impact details (materials, defensible space, insurance, code ref).
+   - Runoff → NOAA Atlas 14 rainfall + HSG-adjusted C-values replace fixed defaults. HSG D adds +0.15, HSG A reduces -0.08.
+
+3. **Weighted Verdict:** Strategist verdict now uses weighted scoring (foundation×3, stormwater×2, site×1, cost×1) + compound risk bonus, producing 4 levels: Good Candidate / Proceed with Caution / Moderate Risk / High Risk.
+
+4. **Contour Fix:** SSURGO WMS raster now renders below contour GeoJSON lines (was on top, hiding them). Contour density targets 8-15 lines (was 5). 6x upsampling for coarse grids. Labels use `symbol-placement: line` with `text-allow-overlap: true` for short mountainous contour loops.
+
+5. **PDF Report:** Added 2 new pages — AI Brain Analysis (verdict, expert findings table, tradeoffs, confidence) and Site Design (pad placement with scored alternatives, orientation with scores, window strategy, room zoning, driveway). Reverted from html2pdf.js to printable HTML (Ctrl+P) after blank PDF issues.
+
+6. **Engineering Q&A:** Switched to Haiku (3x faster than Sonnet) to stay within Netlify 26s timeout. Slim context (15 fields instead of full analysis result). Fixed markdown code fence stripping and nested JSON parsing.
+
+7. **Time Budget:** Global time budget (22s compute + 4s buffer) prevents Netlify 504 timeouts. Each Claude call checks remaining time, skips if <4s left. Per-call timeout races against budget.
+
+8. **Cost Model:** Foundation/grading now priced off ~2,500 SF building footprint (was full lot buildable area). Cut/fill scaled down for large parcels. Prevents inflated $1.5M+ estimates for screening.
+
+9. **Draw Tool:** Minimum rectangle size (~30m) prevents line-like parcels from zero-height clicks.
+
+10. **New Repo:** Code pushed to https://github.com/Pleesudjai/sitesense3 with Netlify auto-deploy at https://musical-cuchufli-3cd9f8.netlify.app.
+
+**Why this approach:** QA sweep of 20 US cities revealed: uniform verdicts (all "Proceed with Caution"), inflated costs, fake PDF, dead seismic API, Q&A timeouts. Each fix closes a feedback loop between the expert panel and user-facing outputs — the architecture was designed for this but the wiring was incomplete.
+
+**Files changed:** analyze.js (seismic API, foundation feedback loop, cost feedback loop, fire uplift, runoff with NOAA+HSG, weighted verdict, time budget), engineering_assist.js (Haiku, slim prompt, JSON parsing), ElevationChart.jsx (contour layer order, density, labels, upsampling), ReportGenerator.jsx (2 new pages, fire/cost/runoff data in existing pages, reverted to printable HTML), ReportButton.jsx (simplified), App.jsx (Moderate Risk color, better error message), MapView.jsx (minimum rectangle size), EngineeringAssistant.jsx (slim context), vite.config.js (updated proxy URL), structural-ai-brain-architecture.md (AS-BUILT section)
+
+**Next:** Project submitted to HackASU 2025. Future work: real PDF generation, persona-aware output, live NOAA Atlas 14 integration, RSMeans cost data.
+
+---
+
+## 2026-05-08 — Sync: Post-hackathon work + YC pivot prep
+
+**What was committed:** Accumulated post-submission edits and pitch-prep artifacts that piled up across several local sessions and were never pushed.
+
+- **Backend (`analyze.js` +337 lines, `engineering_assist.js` +78):** rules-first-then-Claude pattern, deeper expert reasoning, compound risk detection, brain architecture for Engineering Q&A with rule-based fallback when `ANTHROPIC_API_KEY` is missing.
+- **Frontend (`App.jsx`, `ElevationChart.jsx`, `EngineeringAssistant.jsx`, `MapView.jsx`, `ReportButton.jsx`, `ReportGenerator.jsx` +200 lines):** UI tweaks paired with the backend brain pipeline changes; `ReportGenerator.jsx` gained substantial content; `vite.config.js` proxy URL updated.
+- **Frontend deps (`package.json`, `package-lock.json`):** 1 new dep (kept in lockfile).
+- **Specs (`specs/structural-ai-brain-architecture.md` +250 lines):** AS-BUILT details for the rules-first brain.
+- **Skills (`skills/` — 16 new SKILL.md files):** SiteSense expert roster — parcel-strategist, foundation-advisor, stormwater-reviewer, zoning-entitlement-advisor, utility-feasibility-advisor, structural-screening-advisor, climate-responsive-design-advisor, environmental-constraints-reviewer, constructability-reviewer, cost-forecaster, data-quality-auditor, engineer-handoff-coordinator, house-fit-advisor, owner-decision-coach, site-design-advisor, sitesense-expert-router. Sub-agents the brain orchestrates.
+- **Scripts (`scripts/`):** `create-claude-role-pptx.js` and `generate-pdfs.mjs` for pitch-deck generation; root-level `package.json` adds `playwright` + `pptxgenjs` for these.
+- **Docs:** `docs/agent-sdk-architecture.md` (YC pivot architecture + roadmap), `docs/hack-pitch-ai-note.md`, `docs/linkedin-posts.md`, `docs/video-prompts.md`, `docs/video-script.md`, `docs/winning-checklist.md`, `todofromX.md` (Jacob's prioritization).
+- **Updated docs:** `docs/handoff.md`, `docs/concept-notes.md`, `docs/project-brief.md`.
+- **`.gitignore`:** added `*.mp4`, `*.pptx`, `Screenshot*.png`, `dry-run-*.json`, and scratch-note filenames so the 282 MB demo videos and PPTX decks stay in Dropbox.
+
+**Why this approach:** Single sync commit because the work spans many small post-hackathon polish passes that interlock (brain pipeline, sub-agent skills, pitch artifacts) and shipping it as one labeled "sync" commit is more honest than fabricating fine-grained history. Binaries excluded — the repo is for code+docs; videos/decks live in Dropbox.
+
+**Files changed:** see commit diff. Net: +1,454 / -267 in 16 modified files, plus 16 new skills, 6 new docs, 2 new scripts, root `package.json`/`package-lock.json`.
+
+**Next:** Begin Agent SDK rewrite per `docs/agent-sdk-architecture.md`: pick MVP county (recommend Maricopa), pick report template (recommend 1-page), `npm install @anthropic-ai/claude-agent-sdk`, build `parcel_lookup` MCP tool first.

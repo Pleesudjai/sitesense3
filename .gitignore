@@ -30,3 +30,15 @@ Thumbs.db
 
 # Local Netlify folder
 .netlify
+
+# Pitch / demo binaries — too large for git, keep in Dropbox
+*.mp4
+*.pptx
+Screenshot*.png
+
+# Local dry-run fixtures (regeneratable from analyze.js)
+dry-run-*.json
+
+# Scratch notes (not real docs)
+NOte
+Claude_code_Experimental_agent_team*

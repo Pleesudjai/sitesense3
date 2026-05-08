@@ -14,7 +14,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'https://fastidious-clafoutis-995943.netlify.app',
+        target: 'https://musical-cuchufli-3cd9f8.netlify.app',
         changeOrigin: true,
       },
     },

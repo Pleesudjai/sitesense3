@@ -667,23 +667,36 @@ function wktToGeoJSON(wkt) {
 async function getSeismicData(polygon) {
   const [cx, cy] = polygonCentroid(polygon.coordinates)
   let seismic = defaultSeismicValues(cy, cx)
+  let sdcFromApi = null
   try {
     const params = new URLSearchParams({ latitude: cy, longitude: cx, riskCategory: 'II', siteClass: 'D', title: 'SiteSense' })
-    const res = await fetch(`https://earthquake.usgs.gov/hazard/designmaps/us/json?${params}`,
+    const res = await fetch(`https://earthquake.usgs.gov/ws/designmaps/asce7-22.json?${params}`,
       { signal: AbortSignal.timeout(15000) })
     const data = await res.json()
-    const design = data?.response?.data?.design || {}
-    const mapped = data?.response?.data?.mapped || {}
-    const ss = parseFloat(design.ss || mapped.ss) || seismic.ss
-    const s1 = parseFloat(design.s1 || mapped.s1) || seismic.s1
-    seismic = { ss: Math.round(ss * 1000) / 1000, s1: Math.round(s1 * 1000) / 1000, sds: Math.round(ss * 2 / 3 * 1000) / 1000, sd1: Math.round(s1 * 2 / 3 * 1000) / 1000 }
-  } catch { /* use defaults */ }
-  return { ...seismic, wind_mph: lookupWindSpeed(cy, cx), center_lat: cy, center_lon: cx }
+    const d = data?.response?.data || {}
+    const ss = parseFloat(d.ss) || seismic.ss
+    const s1 = parseFloat(d.s1) || seismic.s1
+    const sds = parseFloat(d.sds) || Math.round(ss * 2 / 3 * 1000) / 1000
+    const sd1 = parseFloat(d.sd1) || Math.round(s1 * 2 / 3 * 1000) / 1000
+    seismic = { ss: Math.round(ss * 1000) / 1000, s1: Math.round(s1 * 1000) / 1000, sds: Math.round(sds * 1000) / 1000, sd1: Math.round(sd1 * 1000) / 1000 }
+    if (d.sdc) sdcFromApi = d.sdc
+  } catch (e) { console.warn('Seismic API failed, using defaults:', e.message) }
+  return { ...seismic, sdc: sdcFromApi, wind_mph: lookupWindSpeed(cy, cx), center_lat: cy, center_lon: cx }
 }
 
 function defaultSeismicValues(lat, lon) {
-  if (lon > -110.5 && lat > 33.5) return { ss: 0.25, s1: 0.09, sds: 0.17, sd1: 0.06 }
-  return { ss: 0.06, s1: 0.02, sds: 0.04, sd1: 0.01 }
+  // California — high seismicity
+  if (lon > -124 && lon < -114 && lat > 32 && lat < 42) return { ss: 1.50, s1: 0.60, sds: 1.00, sd1: 0.40 }
+  // Pacific NW (OR/WA)
+  if (lon > -125 && lon < -120 && lat > 42 && lat < 49) return { ss: 1.00, s1: 0.40, sds: 0.67, sd1: 0.27 }
+  // New Madrid zone (Memphis/St Louis)
+  if (lon > -92 && lon < -87 && lat > 34 && lat < 38) return { ss: 1.20, s1: 0.40, sds: 0.80, sd1: 0.27 }
+  // Intermountain West (UT/NV)
+  if (lon > -115 && lon < -109 && lat > 37 && lat < 42) return { ss: 0.80, s1: 0.30, sds: 0.53, sd1: 0.20 }
+  // Arizona
+  if (lon > -114 && lon < -109 && lat > 31 && lat < 37) return { ss: 0.25, s1: 0.09, sds: 0.17, sd1: 0.06 }
+  // Default — low seismicity (east/central US)
+  return { ss: 0.10, s1: 0.04, sds: 0.07, sd1: 0.03 }
 }
 
 function lookupWindSpeed(lat, lon) {
@@ -796,6 +809,8 @@ function recommendFoundation(floodZone, slopePct, soilClass, shrinkSwell, sdc, c
     return ['POST_TENSIONED_SLAB', 'ACI 360R-10 §5.4 — Post-tensioned slab for expansive/high-shrink-swell soils']
   if (caliche)
     return ['GRADE_BEAM_ON_PIERS', 'ACI 360R-10 §4.2 + IBC 2021 §1803 — Grade beams on piers to bypass caliche hardpan']
+  if (slopePct > 15)
+    return ['GRADE_BEAM_ON_PIERS', `IBC 2021 §1807 — Grade beams on piers for steep terrain (${slopePct.toFixed(1)}% avg slope)`]
   return ['CONVENTIONAL_SLAB', 'ACI 360R-10 — Conventional slab-on-ground. Subgrade per ACI 360R-10, 95% Proctor.']
 }
 
@@ -865,26 +880,57 @@ function estimateCost(cutCy, fillCy, foundationType, buildableSf, lat, lon, load
   const effMult = mult * loadMult
   const fnd = FND_COSTS[foundationType] || FND_COSTS.CONVENTIONAL_SLAB
   const fndRate = (fnd.low + fnd.high) / 2
+
+  // Use typical building footprint for foundation/grading, not full lot
+  // Single-family: ~2,000 SF footprint. Cap at 5,000 SF for larger concepts.
+  const typicalFootprintSf = Math.min(buildableSf, 2500)
+  // Rough grading: only grade the building pad + driveway area (~1.5x footprint)
+  const gradingAreaSf = Math.min(buildableSf, typicalFootprintSf * 1.5)
+  // Cut/fill: scale down proportionally if lot is large (don't grade the whole lot)
+  const lotAcres = buildableSf / 43560
+  const earthworkScale = lotAcres > 1 ? Math.min(1, 0.15 / lotAcres + 0.1) : 1
+
   const breakdown = {
-    earthwork_cut:  Math.round(cutCy * 22 * mult),
-    earthwork_fill: Math.round(fillCy * 26 * mult),
-    foundation:     Math.round(buildableSf * fndRate * effMult),
-    rough_grading:  Math.round(buildableSf * 3.5 * mult),
+    earthwork_cut:  Math.round(cutCy * earthworkScale * 22 * mult),
+    earthwork_fill: Math.round(fillCy * earthworkScale * 26 * mult),
+    foundation:     Math.round(typicalFootprintSf * fndRate * effMult),
+    rough_grading:  Math.round(gradingAreaSf * 3.5 * mult),
     site_utilities: Math.round(27000 * mult),
   }
   const total = Object.values(breakdown).reduce((s, v) => s + v, 0)
   const projections = {}
   for (const yr of [0, 2, 5, 10]) projections[yr] = Math.round(total * (1.045 ** yr))
-  return { region, regional_multiplier: mult, breakdown, total_now: total, low_estimate: Math.round(total * 0.80), high_estimate: Math.round(total * 1.30), projections, foundation_rate_psf: Math.round(fndRate * effMult * 100) / 100, note: 'ROM estimate ±30%. For preliminary planning only.' }
+  return { region, regional_multiplier: mult, breakdown, total_now: total, low_estimate: Math.round(total * 0.80), high_estimate: Math.round(total * 1.30), projections, foundation_rate_psf: Math.round(fndRate * effMult * 100) / 100, building_footprint_sf: typicalFootprintSf, note: 'ROM site-prep estimate for typical single-family footprint (~2,500 SF). ±30%, preliminary only.' }
 }
 
-function calculateRunoff(areaAcres, slopePct, soilClass) {
+function calculateRunoff(areaAcres, slopePct, soilClass, precipData, hsg) {
   const slopeClass = slopePct < 5 ? 'flat' : slopePct < 15 ? 'moderate' : 'steep'
   const key = `${soilClass}-${slopeClass}`
   const C_VALS = { 'S-flat': 0.20, 'S-moderate': 0.25, 'S-steep': 0.30, 'SL-flat': 0.25, 'SL-moderate': 0.30, 'SL-steep': 0.35, 'L-flat': 0.30, 'L-moderate': 0.35, 'L-steep': 0.40, 'CL-flat': 0.40, 'CL-moderate': 0.45, 'CL-steep': 0.50, 'C-flat': 0.50, 'C-moderate': 0.55, 'C-steep': 0.60 }
-  const C = C_VALS[key] || 0.35
-  const Q = C * 1.0 * areaAcres
-  return { runoff_coeff: C, rainfall_intensity_in_hr: 1.0, area_acres: areaAcres, peak_cfs: Math.round(Q * 100) / 100, detention_needed: Q > 2.0, detention_volume_cf: Q > 2.0 ? Math.round(Q * 3600 * 0.5) : 0 }
+
+  // HSG-adjusted C value: HSG D soil increases runoff regardless of texture
+  let C = C_VALS[key] || 0.35
+  if (hsg === 'D' && C < 0.50) C = Math.min(C + 0.15, 0.60)
+  else if (hsg === 'C' && C < 0.45) C = Math.min(C + 0.08, 0.55)
+  else if (hsg === 'A' && C > 0.25) C = Math.max(C - 0.08, 0.15)
+
+  // Use real NOAA rainfall intensity if available, else default 1.0 in/hr
+  const intensity = (precipData?.intensity_10yr_1hr_in && !precipData?.fallback)
+    ? precipData.intensity_10yr_1hr_in : 1.0
+  const intensitySource = intensity !== 1.0 ? 'NOAA Atlas 14' : 'default (1.0 in/hr)'
+
+  const Q = C * intensity * areaAcres
+  const detentionNeeded = Q > 2.0 || (hsg === 'D' && Q > 1.5)
+  return {
+    runoff_coeff: Math.round(C * 100) / 100,
+    rainfall_intensity_in_hr: intensity,
+    rainfall_source: intensitySource,
+    hsg_adjustment: hsg || null,
+    area_acres: areaAcres,
+    peak_cfs: Math.round(Q * 100) / 100,
+    detention_needed: detentionNeeded,
+    detention_volume_cf: detentionNeeded ? Math.round(Q * 3600 * 0.5) : 0,
+  }
 }
 
 // ─── CLIMATE & SITE DESIGN HELPERS ───────────────────────────────────────────
@@ -1383,11 +1429,23 @@ function expertResult(name, verdict, reasons, risks, opportunities, confidence, 
   return { expert: name, verdict, reasons, risks, opportunities, confidence, unknowns, next_checks: nextChecks, evidence_refs: evidenceRefs }
 }
 
+// Global time budget — track how much time we've spent so we don't exceed Netlify's 26s limit
+let _startTime = 0
+function setStartTime() { _startTime = Date.now() }
+function remainingMs() { return Math.max(0, 22000 - (Date.now() - _startTime)) } // 22s budget (4s buffer)
+
 // Shared: call Claude as a specialist expert
 // NEW PATTERN: receives ruleFindings so Claude EXTENDS them instead of starting from scratch
 async function callExpertLLM(expertName, systemPrompt, evidence, schema, ruleFindings) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return null
+
+  // Skip Claude if we're running low on time
+  const remaining = remainingMs()
+  if (remaining < 4000) {
+    console.warn(`${expertName}: skipping Claude — only ${remaining}ms remaining`)
+    return null
+  }
 
   try {
     const client = new Anthropic({ apiKey })
@@ -1409,15 +1467,18 @@ Your job is to:
 
     prompt += `\n\nEVIDENCE:\n${JSON.stringify(evidence, null, 2)}\n\nRespond with ONLY valid JSON matching this schema:\n${JSON.stringify(schema)}`
 
-    const msg = await client.messages.create({
+    // Race Claude call against time budget
+    const claudePromise = client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 800,
+      max_tokens: 600,
       messages: [{ role: 'user', content: prompt }],
     })
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('time budget exceeded')), Math.min(remaining - 2000, 8000)))
+    const msg = await Promise.race([claudePromise, timeoutPromise])
     const text = msg.content[0].text
     return JSON.parse(text)
   } catch (e) {
-    console.warn(`${expertName} LLM call failed:`, e.message)
+    console.warn(`${expertName} LLM call skipped:`, e.message)
     return null
   }
 }
@@ -1834,12 +1895,34 @@ function routeExperts(ep) {
 
 async function runParcelStrategist(ep, expertFindings) {
   // STEP 1: Always run rules first
-  // Merge all expert verdicts into one parcel-level verdict
+  // Weighted verdict merge — foundation/stormwater carry more weight than cost
+  const EXPERT_WEIGHTS = {
+    'foundation-advisor': 3,    // safety-critical
+    'stormwater-reviewer': 2,   // regulatory + cost
+    'site-design-advisor': 1,   // design flexibility
+    'cost-forecaster': 1,       // financial, not safety
+  }
+  const RISK_SCORES = { 'high_risk': 3, 'moderate_risk': 1, 'low_risk': 0 }
+
+  let weightedScore = 0
+  for (const ef of expertFindings) {
+    const w = EXPERT_WEIGHTS[ef.expert] || 1
+    const s = RISK_SCORES[ef.verdict] || 0
+    weightedScore += w * s
+  }
+
+  // Count compound risks — each adds weight
+  const compoundCount = expertFindings.reduce((c, e) => c + (e.reasons || []).filter(r => r.startsWith('COMPOUND')).length, 0)
+  weightedScore += compoundCount * 0.5
+
+  const verdict = weightedScore >= 6 ? 'High Risk'
+    : weightedScore >= 3 ? 'Moderate Risk'
+    : weightedScore >= 1 ? 'Proceed with Caution'
+    : 'Good Candidate'
+
   const verdicts = expertFindings.map(e => e.verdict)
   const hasHigh = verdicts.includes('high_risk')
   const hasMod = verdicts.includes('moderate_risk')
-
-  const verdict = hasHigh ? 'High Risk' : hasMod ? 'Proceed with Caution' : 'Good Candidate'
 
   // Collect top risks across all experts
   const allRisks = expertFindings.flatMap(e => e.risks || [])
@@ -1882,8 +1965,7 @@ async function runParcelStrategist(ep, expertFindings) {
     }
   }
 
-  // Count compound risks across ALL expert reasons
-  const compoundCount = expertFindings.reduce((c, e) => c + (e.reasons || []).filter(r => r.startsWith('COMPOUND')).length, 0)
+  // Reuse compoundCount from weighted verdict above
   if (compoundCount >= 2) {
     tradeoffs.push(`${compoundCount} compound risks detected — these are interactions between multiple site conditions that individual assessments would miss. Professional coordination across disciplines is especially important.`)
   }
@@ -1975,21 +2057,51 @@ function runDataQualityAuditor(ep, strategistResult) {
 // ─── RULE-BASED REPORT (fallback — no Claude API needed) ────────────────────
 
 function generateRuleBasedReport(summary, gisData, evidencePack) {
-  // Count high-risk factors
+  // Count risk factors with weighted severity
   const risks = []
-  if (['AE', 'VE', 'A', 'AO'].includes(summary.flood_zone)) risks.push('flood zone ' + summary.flood_zone)
-  if ((summary.shrink_swell || '').toLowerCase() === 'high') risks.push('high shrink-swell soil')
-  if ((summary.avg_slope_pct || 0) > 15) risks.push(`steep slope (${summary.avg_slope_pct.toFixed(1)}%)`)
-  if (summary.wetlands_present) risks.push('wetlands present')
-  if ((summary.fire_risk || '').toLowerCase() === 'high') risks.push('high wildfire risk')
+  let riskScore = 0
+  const positives = []
 
-  const verdict = risks.length === 0 ? 'Good Candidate'
-    : risks.length <= 2 ? 'Proceed with Caution'
+  // High-severity risks (weight 3)
+  if (['VE'].includes(summary.flood_zone)) { risks.push('coastal high-hazard flood zone VE'); riskScore += 3 }
+  else if (['AE', 'A', 'AO', 'AH'].includes(summary.flood_zone)) { risks.push('flood zone ' + summary.flood_zone); riskScore += 2 }
+  if ((summary.avg_slope_pct || 0) > 25) { risks.push(`very steep slope (${summary.avg_slope_pct.toFixed(1)}%)`); riskScore += 3 }
+  else if ((summary.avg_slope_pct || 0) > 15) { risks.push(`steep slope (${summary.avg_slope_pct.toFixed(1)}%)`); riskScore += 2 }
+  if (summary.collapsible) { risks.push('collapsible soil detected'); riskScore += 2 }
+  if (summary.liquefiable) { risks.push('liquefaction risk'); riskScore += 3 }
+  if (summary.organic) { risks.push('organic soil — deep foundations required'); riskScore += 3 }
+
+  // Medium-severity risks (weight 1-2)
+  if ((summary.shrink_swell || '').toLowerCase() === 'high') { risks.push('high shrink-swell soil'); riskScore += 2 }
+  else if ((summary.shrink_swell || '').toLowerCase() === 'moderate') { risks.push('moderate shrink-swell soil'); riskScore += 1 }
+  if (summary.wetlands_present) { risks.push('wetlands present on parcel'); riskScore += 2 }
+  if ((summary.fire_risk || '').toLowerCase().includes('very high')) { risks.push('very high wildfire risk'); riskScore += 2 }
+  else if ((summary.fire_risk || '').toLowerCase() === 'high') { risks.push('high wildfire risk'); riskScore += 1 }
+  if (summary.caliche) { risks.push('caliche hardpan — specialized excavation needed'); riskScore += 1 }
+  const sdc = (summary.seismic_sdc || '').toUpperCase()
+  if (['D', 'E', 'F'].includes(sdc)) { risks.push(`high seismic zone (SDC ${sdc})`); riskScore += 1 }
+  if ((summary.corrosion_concrete || '').toLowerCase() === 'high') { risks.push('high sulfate attack risk on concrete'); riskScore += 1 }
+  if ((summary.avg_slope_pct || 0) > 8 && (summary.avg_slope_pct || 0) <= 15) { risks.push(`moderate slope (${summary.avg_slope_pct.toFixed(1)}%)`); riskScore += 1 }
+
+  // Positives
+  if (summary.flood_zone === 'X') positives.push('outside flood hazard area')
+  if ((summary.avg_slope_pct || 0) <= 5) positives.push('gentle terrain — minimal grading needed')
+  if ((summary.shrink_swell || '').toLowerCase() === 'low') positives.push('low-expansion soil')
+  if (['A', 'B'].includes(sdc)) positives.push(`low seismic risk (SDC ${sdc})`)
+  if ((summary.presumptive_bearing_psf || 0) >= 3000) positives.push('good bearing capacity')
+  if (!summary.wetlands_present) positives.push('no wetlands')
+
+  // Weighted verdict
+  const verdict = riskScore === 0 ? 'Good Candidate'
+    : riskScore <= 2 ? 'Proceed with Caution'
+    : riskScore <= 5 ? 'Moderate Risk'
     : 'High Risk'
 
-  const verdict_reason = risks.length === 0
-    ? 'No major risk factors detected — site appears suitable for standard construction.'
-    : `Site has ${risks.length} concern(s): ${risks.join(', ')}.`
+  const verdict_reason = riskScore === 0
+    ? `Site appears well-suited for standard construction: ${positives.slice(0, 3).join(', ')}.`
+    : riskScore <= 2
+    ? `Generally favorable with minor concern(s): ${risks.join(', ')}. ${positives.length > 0 ? 'Strengths: ' + positives.slice(0, 2).join(', ') + '.' : ''}`
+    : `Site has ${risks.length} concern(s) totaling risk score ${riskScore}: ${risks.join(', ')}.`
 
   // Tradeoffs — check for conflicts
   const tradeoffs = []
@@ -2002,7 +2114,6 @@ function generateRuleBasedReport(summary, gisData, evidencePack) {
   if ((summary.avg_slope_pct || 0) <= 5 && (summary.shrink_swell || '').toLowerCase() === 'high') {
     tradeoffs.push('Flat terrain simplifies construction, but expansive soil requires a more expensive foundation system (PT slab).')
   }
-  const sdc = (summary.seismic_sdc || '').toUpperCase()
   if (['A', 'B'].includes(sdc) && (summary.wind_mph || 0) > 110) {
     tradeoffs.push('Low seismic risk, but high wind loads will drive structural design and increase framing costs.')
   }
@@ -2069,12 +2180,19 @@ function generateRuleBasedReport(summary, gisData, evidencePack) {
   return {
     verdict,
     verdict_reason,
-    top_reasons: risks.slice(0, 3).map(r => `${r.charAt(0).toUpperCase() + r.slice(1)} affects site feasibility and may increase costs`),
+    top_reasons: riskScore === 0
+      ? positives.slice(0, 3).map(p => p.charAt(0).toUpperCase() + p.slice(1))
+      : risks.slice(0, 3).map(r => r.charAt(0).toUpperCase() + r.slice(1)),
     confidence_summary: {
-      overall: evidencePack?.confidence?.overall || 'partially_verified',
+      overall: evidencePack?.confidence?.soil === 'fallback' ? 'needs_verification'
+        : evidencePack?.confidence?.overall === 'verified' ? 'verified'
+        : 'partially_verified',
       reason: evidencePack?.confidence?.soil === 'fallback'
-        ? 'Key soil data is from defaults — geotechnical investigation needed for verification.'
-        : 'Core data is from government sources. Subsurface and utility confirmation still pending.',
+        ? 'Soil data is from regional defaults — geotechnical boring needed before design.'
+        : riskScore === 0
+        ? 'Core data from government sources supports a favorable assessment. Standard due diligence still recommended.'
+        : 'Data from government sources confirms risk factors. Professional verification recommended before proceeding.',
+      data_quality_warnings: Object.entries(evidencePack?.confidence || {}).filter(([k, v]) => v === 'fallback' || v === 'heuristic').map(([k, v]) => `${k}: ${v === 'fallback' ? 'using default values' : 'rule-based estimate'}`),
     },
     tradeoffs,
     best_fit_concept,
@@ -2092,8 +2210,8 @@ async function generateAiBrainReport(summary, gisData, evidencePack) {
   const apiKey = process.env.ANTHROPIC_API_KEY
 
   // Try Claude first, fall back to rule-based
-  if (!apiKey) {
-    console.log('No ANTHROPIC_API_KEY — using rule-based report')
+  if (!apiKey || remainingMs() < 5000) {
+    console.log(`${!apiKey ? 'No ANTHROPIC_API_KEY' : 'Time budget low (' + remainingMs() + 'ms)'} — using rule-based report`)
     return generateRuleBasedReport(summary, gisData, evidencePack)
   }
 
@@ -2571,6 +2689,8 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: corsHeaders(), body: '' }
 
   try {
+    setStartTime() // Start global time budget (22s for computation, 4s buffer)
+
     const body = JSON.parse(event.body || '{}')
     const polygon = body.polygon
     if (!polygon) throw new Error('polygon is required')
@@ -2599,17 +2719,10 @@ exports.handler = async (event) => {
     // Engineering calcs
     const slopeData = calculateSlope(elevData.grid, elevData.cell_width_ft)
     const cutFill = calculateCutFill(elevData.grid, elevData.avg_elevation_ft, elevData.cell_width_ft)
-    const sdc = getSeismicDesignCategory(seismicData.sds, seismicData.sd1)
+    const sdc = seismicData.sdc || getSeismicDesignCategory(seismicData.sds, seismicData.sd1)
     const [foundationType, foundationCode] = recommendFoundation(floodData.zone, slopeData.avg_slope_pct, soilData.texture_class, soilData.shrink_swell, sdc, soilData.caliche, soilData)
     const loads = estimateStructuralLoads(seismicData.wind_mph, seismicData.sds, seismicData.sd1, sdc, elevData.avg_elevation_ft)
-    const runoff = calculateRunoff(elevData.area_acres, slopeData.avg_slope_pct, soilData.texture_class)
-    // Override rainfall intensity with real NOAA data if available
-    if (precipData.intensity_10yr_1hr_in && !precipData.fallback) {
-      const C = runoff.runoff_coeff
-      const i = precipData.intensity_10yr_1hr_in
-      runoff.rainfall_intensity_in_hr = i
-      runoff.peak_cfs = Math.round(C * i * elevData.area_acres * 100) / 100
-    }
+    const runoff = calculateRunoff(elevData.area_acres, slopeData.avg_slope_pct, soilData.texture_class, precipData, soilData.hydrologic_group)
 
     const steepFrac = slopeData.steep_fraction_pct / 100
     const wetFrac = wetlandsData.coverage_pct / 100
@@ -2685,6 +2798,116 @@ exports.handler = async (event) => {
     if (routing.selected_experts.includes('cost-forecaster')) expertPromises.push(runCostForecaster(evidencePack))
     const expertFindings = await Promise.all(expertPromises)
 
+    // ── BRAIN FEEDBACK LOOP: Expert findings upgrade the baseline ──
+    // Foundation Advisor may detect compound risks the if-else ladder missed.
+    // If so, upgrade foundation type and recalculate costs.
+    const fndAdvisor = expertFindings.find(e => e.expert === 'foundation-advisor')
+    let finalFoundationType = foundationType
+    let finalFoundationCode = foundationCode
+    let finalCosts = costs
+
+    if (fndAdvisor && fndAdvisor.verdict !== 'low_risk') {
+      // Expert found risks — check if foundation needs upgrading
+      const UPGRADE_MAP = {
+        // keyword in reason → [upgraded type, code reference]
+        'deep pile': ['DEEP_PILE', 'IBC 2021 §1803.5.5 — Upgraded by Foundation Advisor: compound risks detected'],
+        'deep foundation': ['DEEP_PILE', 'IBC 2021 §1803.5.5 — Upgraded by Foundation Advisor: compound risks detected'],
+        'post-tensioned': ['POST_TENSIONED_SLAB', 'ACI 360R-10 §5.4 — Upgraded by Foundation Advisor: expansive soil risk'],
+        'pt slab': ['POST_TENSIONED_SLAB', 'ACI 360R-10 §5.4 — Upgraded by Foundation Advisor: expansive soil risk'],
+        'grade beam': ['GRADE_BEAM_ON_PIERS', 'ACI 360R-10 §4.2 — Upgraded by Foundation Advisor: compound risk'],
+        'drilled caisson': ['DRILLED_CAISSON', 'IBC 2021 §1807 — Upgraded by Foundation Advisor: slope + soil interaction'],
+        'elevated': ['ELEVATED_PILE', 'ASCE 7-22 Ch.5 — Upgraded by Foundation Advisor: flood + soil interaction'],
+        'pile foundation': ['DEEP_PILE_SEISMIC', 'ASCE 7-22 Ch.12 — Upgraded by Foundation Advisor: seismic + soil interaction'],
+        'retaining': ['GRADE_BEAM_ON_PIERS', 'IBC 2021 §1807 — Upgraded by Foundation Advisor: slope-driven'],
+      }
+
+      // Foundation severity ranking (higher index = more severe)
+      const FND_SEVERITY = {
+        CONVENTIONAL_SLAB: 0, GRADE_BEAM_ON_PIERS: 1, POST_TENSIONED_SLAB: 2,
+        DRILLED_CAISSON: 3, ELEVATED_PILE: 4, DEEP_PILE: 5, DEEP_PILE_SEISMIC: 6,
+      }
+
+      const allReasons = (fndAdvisor.reasons || []).join(' ').toLowerCase()
+      for (const [keyword, [upgType, upgCode]] of Object.entries(UPGRADE_MAP)) {
+        if (allReasons.includes(keyword) && (FND_SEVERITY[upgType] || 0) > (FND_SEVERITY[finalFoundationType] || 0)) {
+          finalFoundationType = upgType
+          finalFoundationCode = upgCode
+        }
+      }
+
+      // Also upgrade if max slope is extreme but average is mild (the gap your screenshot showed)
+      if (slopeData.max_slope_pct > 25 && finalFoundationType === 'CONVENTIONAL_SLAB') {
+        finalFoundationType = 'GRADE_BEAM_ON_PIERS'
+        finalFoundationCode = 'IBC 2021 §1807 — Upgraded: max slope >25% requires localized deep foundations even though average slope is mild'
+      }
+
+      // Recalculate costs if foundation changed
+      if (finalFoundationType !== foundationType) {
+        finalCosts = estimateCost(cutFill.cut_cy, cutFill.fill_cy, finalFoundationType, buildableSf, elevData.center_lat, elevData.center_lon, loads.cost_multiplier)
+        // Update summary and evidence pack
+        summary.foundation_type = finalFoundationType
+        summary.foundation_code = finalFoundationCode
+        summary.total_now = finalCosts.total_now
+        summary.cost_5yr = finalCosts.projections[5]
+        summary.cost_10yr = finalCosts.projections[10]
+        evidencePack.computed.foundation = { type: finalFoundationType, code_ref: finalFoundationCode, reasoning: `Baseline: ${foundationType}. Upgraded by Foundation Advisor expert after compound risk analysis.` }
+        evidencePack.computed.costs = { total_now: finalCosts.total_now, breakdown: finalCosts.breakdown, projections: finalCosts.projections, regional_multiplier: finalCosts.regional_multiplier }
+      }
+    }
+
+    // ── COST FORECASTER FEEDBACK LOOP ──
+    // Cost Forecaster detects compound premiums — apply them to actual costs
+    const costForecaster = expertFindings.find(e => e.expert === 'cost-forecaster')
+    if (costForecaster) {
+      // Extract compound premium from reasons
+      const premiumMatch = (costForecaster.reasons || []).join(' ').match(/Total compound premium: \+(\d+)%/)
+      if (premiumMatch) {
+        const premium = parseInt(premiumMatch[1]) / 100
+        const adjustedTotal = Math.round(finalCosts.total_now * (1 + premium))
+        finalCosts = {
+          ...finalCosts,
+          total_now: adjustedTotal,
+          low_estimate: Math.round(adjustedTotal * 0.80),
+          high_estimate: Math.round(adjustedTotal * 1.30),
+          projections: { 0: adjustedTotal, 2: Math.round(adjustedTotal * 1.045 ** 2), 5: Math.round(adjustedTotal * 1.045 ** 5), 10: Math.round(adjustedTotal * 1.045 ** 10) },
+          compound_premium_pct: parseInt(premiumMatch[1]),
+          note: `${finalCosts.note} Compound premium +${premiumMatch[1]}% applied from expert analysis.`,
+        }
+        summary.total_now = finalCosts.total_now
+        summary.cost_5yr = finalCosts.projections[5]
+        summary.cost_10yr = finalCosts.projections[10]
+        evidencePack.computed.costs = { total_now: finalCosts.total_now, breakdown: finalCosts.breakdown, projections: finalCosts.projections, regional_multiplier: finalCosts.regional_multiplier, compound_premium_pct: parseInt(premiumMatch[1]) }
+      }
+    }
+
+    // ── FIRE RISK CONTEXT: Enrich fire data with expert-level insights ──
+    if (fireData.risk_class === 'Very High' || fireData.risk_class === 'High') {
+      fireData.construction_impact = {
+        materials: 'Ignition-resistant exterior materials required (Class A roof, fiber-cement siding)',
+        defensible_space: '30-100 ft vegetation management zone',
+        insurance_premium: 'Elevated fire insurance — $1,500-5,000/yr above standard',
+        code_ref: 'IBC 2021 Ch.7A (WUI provisions)',
+        cost_uplift_pct: fireData.risk_class === 'Very High' ? 12 : 6,
+      }
+      // Apply fire cost uplift to final costs
+      const fireUplift = fireData.construction_impact.cost_uplift_pct / 100
+      finalCosts.fire_uplift_pct = fireData.construction_impact.cost_uplift_pct
+      finalCosts.total_now = Math.round(finalCosts.total_now * (1 + fireUplift))
+      finalCosts.low_estimate = Math.round(finalCosts.total_now * 0.80)
+      finalCosts.high_estimate = Math.round(finalCosts.total_now * 1.30)
+      for (const yr of [0, 2, 5, 10]) finalCosts.projections[yr] = Math.round(finalCosts.total_now * (1.045 ** yr))
+      summary.total_now = finalCosts.total_now
+      summary.cost_5yr = finalCosts.projections[5]
+      summary.cost_10yr = finalCosts.projections[10]
+    }
+
+    // ── RUNOFF ENRICHMENT: Add data source attribution ──
+    runoff.data_sources = []
+    if (runoff.rainfall_source === 'NOAA Atlas 14') runoff.data_sources.push('NOAA Atlas 14 (verified)')
+    else runoff.data_sources.push('Default intensity (1.0 in/hr)')
+    if (runoff.hsg_adjustment) runoff.data_sources.push(`HSG ${runoff.hsg_adjustment} adjustment applied`)
+    runoff.data_sources.push(`Soil class: ${soilData.texture_class || 'Unknown'}`)
+
     // Strategist + auditor run sequentially (they depend on expert findings)
     const strategistResult = await runParcelStrategist(evidencePack, expertFindings)
 
@@ -2716,10 +2939,10 @@ exports.handler = async (event) => {
           endangered_species: speciesData, historic_sites: historicData, landslide: landslideData, sea_level_rise: slrData,
           soil_zones: soilZonesData,
           cut_fill: cutFill,
-          foundation: { type: foundationType, code_ref: foundationCode },
+          foundation: { type: finalFoundationType, code_ref: finalFoundationCode },
           loads, runoff,
           buildable_sf: Math.round(buildableSf),
-          costs, summary,
+          costs: finalCosts, summary,
           evidence_pack: evidencePack,
           expert_findings: expertFindings,
           routing: routing,

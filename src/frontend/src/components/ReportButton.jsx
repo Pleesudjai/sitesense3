@@ -1,8 +1,7 @@
 import { generateReport } from './ReportGenerator'
 
 /**
- * ReportButton — Opens a styled HTML report in a new browser tab.
- * User prints to PDF via Ctrl+P. No server round-trip needed.
+ * ReportButton — Opens a printable HTML report in a new tab.
  */
 export default function ReportButton({ polygon, prefs, result, houseResult, forecastResult }) {
   const handleDownload = () => {
@@ -19,11 +18,8 @@ export default function ReportButton({ polygon, prefs, result, houseResult, fore
                    bg-navy border border-teal hover:bg-teal/20 disabled:opacity-40
                    flex items-center justify-center gap-2"
       >
-        📄 Generate PDF Report
+        📄 PDF Report
       </button>
-      <p className="mt-1 text-xs text-gray-600 text-center">
-        Opens in a new tab · Use Ctrl+P to save as PDF
-      </p>
     </div>
   )
 }

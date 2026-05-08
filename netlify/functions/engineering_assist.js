@@ -567,31 +567,38 @@ exports.handler = async (event) => {
     }
 
     // ── Auto-fetch GIS if address provided but no full site data ────────
+    // Only do GIS fetch if no API key (rule-based needs it). With Claude, skip to save time.
     let gisContext = ''
     let enrichedContext = context || {}
     const address = context?.address
-    if (address && !context?.soil) {
-      const geo = await geocodeLocation(address)
-      if (geo) {
-        const [soil, seismic, flood] = await Promise.all([
-          fetchSoilQuick(geo.lat, geo.lon),
-          fetchSeismicQuick(geo.lat, geo.lon),
-          fetchFloodQuick(geo.lat, geo.lon),
-        ])
-        gisContext = `\nLOCATION: ${address} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})` +
-          `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
-          `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
-          `\nFlood: Zone ${flood.zone}`
+    const hasApiKey = !!process.env.ANTHROPIC_API_KEY
+    if (address && !context?.soil && !hasApiKey) {
+      // Only fetch GIS for rule-based fallback — Claude can reason without it
+      try {
+        const geo = await geocodeLocation(address)
+        if (geo) {
+          const [soil, seismic, flood] = await Promise.all([
+            fetchSoilQuick(geo.lat, geo.lon),
+            fetchSeismicQuick(geo.lat, geo.lon),
+            fetchFloodQuick(geo.lat, geo.lon),
+          ])
+          gisContext = `\nLOCATION: ${address} (${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)})` +
+            `\nSoil: ${soil.texture}, shrink-swell: ${soil.shrinkSwell}, caliche: ${soil.caliche}` +
+            `\nSeismic: SDS=${seismic.sds}, SD1=${seismic.sd1}, SDC=${seismic.sdc}, Wind=${seismic.windMph} mph` +
+            `\nFlood: Zone ${flood.zone}`
 
-        // Enrich context for rule-based fallback
-        enrichedContext = {
-          ...enrichedContext,
-          address,
-          soil: { texture: soil.texture, shrinkSwell: soil.shrinkSwell, caliche: soil.caliche },
-          seismic: { sds: seismic.sds, sd1: seismic.sd1, sdc: seismic.sdc, windMph: seismic.windMph },
-          flood: { zone: flood.zone },
+          enrichedContext = {
+            ...enrichedContext,
+            address,
+            soil: { texture: soil.texture, shrinkSwell: soil.shrinkSwell, caliche: soil.caliche },
+            seismic: { sds: seismic.sds, sd1: seismic.sd1, sdc: seismic.sdc, windMph: seismic.windMph },
+            flood: { zone: flood.zone },
+          }
         }
-      }
+      } catch { /* skip GIS on timeout */ }
+    } else if (address && hasApiKey) {
+      // With Claude available, just pass the address as text context
+      gisContext = `\nLOCATION: ${address}`
     }
 
     // ── Check API key ──────────────────────────────────────────────────────
@@ -618,26 +625,43 @@ exports.handler = async (event) => {
       userContent = `SITE DATA:${gisContext}\n\nQUESTION: ${question.trim()}`
     }
 
-    // ── Call Claude ────────────────────────────────────────────────────────
+    // ── Call Claude (Haiku for speed — must finish within Netlify 26s) ────
     const client = new Anthropic({ apiKey })
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      system: 'You are a civil/structural engineering assistant. Answer questions about US building codes (IBC 2021, ASCE 7-22, ACI 318/350/360R). Cite code sections. Return JSON: {"answer":"...","sources":[{"type":"PUBLIC|LICENSED","reference":"...","description":"..."}],"confidence":"HIGH|MEDIUM|LOW","disclaimer":"..."}',
       messages: [{ role: 'user', content: userContent }],
     })
 
     const rawText = message.content[0].text
 
     // ── Parse Claude response ──────────────────────────────────────────────
+    // Strip markdown code fences if present (```json ... ```)
+    let cleanText = rawText.trim()
+    if (cleanText.startsWith('```')) {
+      cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '')
+    }
+    // Also strip trailing text after closing brace (Haiku sometimes adds extra)
+    const lastBrace = cleanText.lastIndexOf('}')
+    if (lastBrace > 0 && lastBrace < cleanText.length - 1) {
+      cleanText = cleanText.substring(0, lastBrace + 1)
+    }
     let parsed
     try {
-      parsed = JSON.parse(rawText)
+      parsed = JSON.parse(cleanText)
+      // If answer is itself a JSON string, parse it too
+      if (typeof parsed.answer === 'string' && parsed.answer.trim().startsWith('{')) {
+        try {
+          const inner = JSON.parse(parsed.answer.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, ''))
+          if (inner.answer) parsed = inner
+        } catch { /* keep outer */ }
+      }
     } catch {
       // Claude didn't return valid JSON — wrap raw text in expected structure
       parsed = {
-        answer: rawText,
+        answer: cleanText.replace(/[{}"\[\]]/g, '').replace(/\\n/g, '\n').trim(),
         sources: [],
         confidence: 'MEDIUM',
         disclaimer: FALLBACK_DISCLAIMER,

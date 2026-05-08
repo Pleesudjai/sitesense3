@@ -91,35 +91,41 @@ function upsampleGrid(grid, factor) {
   return out
 }
 
-// Pick contour interval — guarantee at least 5 lines from the local data
+// Pick contour interval — target 8-15 lines for good visual density
 function computeContourLevels(minElev, maxElev) {
   const range = maxElev - minElev
   if (range < 0.05) return []
 
   // Standard civil engineering intervals, smallest first
-  const niceIntervals = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500]
+  const niceIntervals = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
 
-  // Pick the largest interval that still gives >= 5 lines
-  let ci = range / 6 // fallback: divide range into 6
+  // Pick the largest interval that still gives >= 8 lines (denser than before)
+  let ci = range / 10 // fallback: divide range into 10
   for (let i = niceIntervals.length - 1; i >= 0; i--) {
     const candidate = niceIntervals[i]
     const nLines = Math.floor(range / candidate) - 1
-    if (nLines >= 5) { ci = candidate; break }
+    if (nLines >= 8) { ci = candidate; break }
+  }
+
+  // Cap at 30 lines max to avoid clutter
+  if (range / ci > 30) {
+    for (let i = 0; i < niceIntervals.length; i++) {
+      if (range / niceIntervals[i] <= 30) { ci = niceIntervals[i]; break }
+    }
   }
 
   // Generate levels snapped to the interval
   const levels = []
   const first = Math.ceil(minElev / ci) * ci
   for (let lv = first; lv <= maxElev; lv += ci) {
-    // Include levels within the data range (allow edge proximity)
     if (lv >= minElev && lv <= maxElev) levels.push(Math.round(lv * 100) / 100)
   }
 
   // Safety: if still < 5, subdivide evenly
   if (levels.length < 5) {
     levels.length = 0
-    const step = range / 6
-    for (let i = 1; i <= 5; i++) {
+    const step = range / 8
+    for (let i = 1; i <= 7; i++) {
       levels.push(Math.round((minElev + step * i) * 10) / 10)
     }
   }
@@ -290,8 +296,9 @@ function buildContourGeoJSON(grid, bbox, minElev, maxElev, range, extendFactor =
     eGrid.push(row)
   }
 
-  // Upsample for smoothness
-  const upGrid = eGrid[0].length <= 40 ? upsampleGrid(eGrid, 4) : eGrid
+  // Upsample for smoothness — 6x for coarse grids, 4x for moderate, none for dense
+  const upFactor = eGrid[0].length <= 20 ? 6 : eGrid[0].length <= 40 ? 4 : 1
+  const upGrid = upFactor > 1 ? upsampleGrid(eGrid, upFactor) : eGrid
   const uRows = upGrid.length, uCols = upGrid[0].length
 
   // Convert upsampled grid coords to lng/lat within extended bbox
@@ -363,40 +370,17 @@ function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon, soilZo
 
     // Build smooth contour GeoJSON extended 20x beyond bbox
     map.on('load', () => {
-      const geojson = buildContourGeoJSON(grid, bbox, minElev, maxElev, range, 20)
-
-      map.addSource('contours', { type: 'geojson', data: geojson })
-
-      // Black contour lines — index contours thicker
-      map.addLayer({
-        id: 'contours-line', type: 'line', source: 'contours',
-        paint: {
-          'line-color': '#000000',
-          'line-width': ['case', ['get', 'isIndex'], 2.0, 0.8],
-          'line-opacity': ['case', ['get', 'isIndex'], 1.0, 0.6],
-        },
+      // SSURGO WMS overlay FIRST (bottom layer — soil boundaries from USDA)
+      map.addSource('ssurgo-wms', {
+        type: 'raster',
+        tiles: [
+          'https://sdmdataaccess.sc.egov.usda.gov/Spatial/SDM.wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=mapunitpoly&BBOX={bbox-epsg-3857}&WIDTH=512&HEIGHT=512&SRS=EPSG:3857&FORMAT=image/png&TRANSPARENT=true'
+        ],
+        tileSize: 512,
       })
-
-      // Elevation labels on ALL contour lines — placed along the line
       map.addLayer({
-        id: 'contours-labels', type: 'symbol', source: 'contours',
-        layout: {
-          'symbol-placement': 'line-center',
-          'text-field': ['concat', ['to-string', ['get', 'elevation']], '\''],
-          'text-size': 14,
-          'text-font': ['Open Sans Bold'],
-          'text-max-angle': 45,
-          'text-allow-overlap': false,
-          'text-ignore-placement': false,
-          'text-keep-upright': true,
-          'text-anchor': 'center',
-          'text-padding': 30,
-        },
-        paint: {
-          'text-color': '#000000',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 2,
-        },
+        id: 'ssurgo-wms-layer', type: 'raster', source: 'ssurgo-wms',
+        paint: { 'raster-opacity': 0.30 },
       })
 
       // Soil map unit polygons — light brown solid outlines, HSG-tinted fill
@@ -436,17 +420,42 @@ function SatelliteContour({ grid, bbox, minElev, maxElev, range, polygon, soilZo
         })
       }
 
-      // SSURGO WMS overlay as a fallback/additional layer (shows USDA soil boundaries)
-      map.addSource('ssurgo-wms', {
-        type: 'raster',
-        tiles: [
-          'https://sdmdataaccess.sc.egov.usda.gov/Spatial/SDM.wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=mapunitpoly&BBOX={bbox-epsg-3857}&WIDTH=512&HEIGHT=512&SRS=EPSG:3857&FORMAT=image/png&TRANSPARENT=true'
-        ],
-        tileSize: 512,
-      })
+      // Black contour lines ON TOP of soil layers
+      const geojson = buildContourGeoJSON(grid, bbox, minElev, maxElev, range, 20)
+      map.addSource('contours', { type: 'geojson', data: geojson })
+
       map.addLayer({
-        id: 'ssurgo-wms-layer', type: 'raster', source: 'ssurgo-wms',
-        paint: { 'raster-opacity': 0.35 },
+        id: 'contours-line', type: 'line', source: 'contours',
+        paint: {
+          'line-color': '#000000',
+          'line-width': ['case', ['get', 'isIndex'], 2.5, 1.2],
+          'line-opacity': ['case', ['get', 'isIndex'], 1.0, 0.7],
+        },
+      })
+
+      // Elevation labels on contour lines — placed along the line
+      // Use 'line' placement (repeating) instead of 'line-center' so labels
+      // appear even on short closed-loop contours in mountainous terrain
+      map.addLayer({
+        id: 'contours-labels', type: 'symbol', source: 'contours',
+        layout: {
+          'symbol-placement': 'line',
+          'symbol-spacing': 200,
+          'text-field': ['concat', ['to-string', ['get', 'elevation']], '\''],
+          'text-size': 13,
+          'text-font': ['Open Sans Bold'],
+          'text-max-angle': 30,
+          'text-allow-overlap': true,
+          'text-ignore-placement': false,
+          'text-keep-upright': true,
+          'text-anchor': 'center',
+          'text-padding': 5,
+        },
+        paint: {
+          'text-color': '#000000',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2.5,
+        },
       })
 
       // Draw the user's input polygon boundary (on top of everything)

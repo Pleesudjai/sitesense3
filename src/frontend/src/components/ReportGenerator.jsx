@@ -572,12 +572,15 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
         <div class="callout-card">
           <div class="card-label">Estimated Site Prep</div>
           <div class="card-value">${money(totalNow)} <span style="font-size:13px;font-weight:400;color:#64748b;">today</span></div>
-          <div class="card-detail">${proj5 ? `${money(proj5)} in 5 years. ` : ''}Construction costs are rising ~4.5%/year (ENR CCI).</div>
+          <div class="card-detail">${proj5 ? `${money(proj5)} in 5 years. ` : ''}Construction costs rising ~4.5%/yr.${
+            result.costs?.compound_premium_pct ? ` Includes +${result.costs.compound_premium_pct}% compound risk premium.` : ''
+          }${result.costs?.fire_uplift_pct ? ` +${result.costs.fire_uplift_pct}% fire zone uplift.` : ''}</div>
         </div>
         <div class="callout-card">
           <div class="card-label">Foundation Direction</div>
           <div class="card-value" style="text-transform:capitalize;">${foundation}</div>
           <div class="card-detail">${foundationExplain} <span style="font-size:11px;color:#94a3b8;">(${codeRef})</span></div>
+          ${result.foundation?.code_ref?.includes('Upgraded') ? `<div style="font-size:10px;color:#f59e0b;margin-top:4px;">&#9888; Upgraded by AI expert analysis from baseline recommendation</div>` : ''}
         </div>
       </div>
 
@@ -669,9 +672,16 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
       items.push({ flag: 'Wetlands', text: 'No wetlands identified on this parcel. No wetland-related permits are needed.' })
     }
     const fireClass = result.fire?.risk_class || 'Low'
-    if (fireLevel === 'HIGH')
-      items.push({ flag: 'Wildfire', text: `Fire risk is rated ${fireClass}. Ignition-resistant construction materials, ember-resistant vents, and defensible space (30\u2013100 ft vegetation clearance) will be required. This adds to both construction and ongoing maintenance costs.` })
-    else if (fireLevel === 'MODERATE')
+    const fireImpact = result.fire?.construction_impact
+    if (fireLevel === 'HIGH') {
+      let fireTxt = `Fire risk is rated ${fireClass}.`
+      if (fireImpact) {
+        fireTxt += ` ${fireImpact.materials}. ${fireImpact.defensible_space}. ${fireImpact.insurance_premium}. Cost uplift: +${fireImpact.cost_uplift_pct}% applied to site prep estimate. Code: ${fireImpact.code_ref}.`
+      } else {
+        fireTxt += ' Ignition-resistant construction materials, ember-resistant vents, and defensible space (30\u2013100 ft vegetation clearance) will be required.'
+      }
+      items.push({ flag: 'Wildfire', text: fireTxt })
+    } else if (fireLevel === 'MODERATE')
       items.push({ flag: 'Wildfire', text: `Fire risk is rated ${fireClass}. Fire-resistant roofing and ember-resistant vents are recommended.` })
     else
       items.push({ flag: 'Wildfire', text: 'Low fire risk. No special fire-resistant construction is required.' })
@@ -719,7 +729,11 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
         </div>
         <p class="explain">
           <span class="means">${floodExplain}</span>
-          <br><span class="tech-value">FEMA Zone: ${floodZone}${floodBFE ? ` &nbsp;|&nbsp; BFE: ${fmtInt(floodBFE)} ft` : ''}</span>
+          <br><span class="tech-value">FEMA Zone: ${floodZone}${floodBFE ? ` &nbsp;|&nbsp; BFE: ${fmtInt(floodBFE)} ft` : ''}
+          &nbsp;|&nbsp; Runoff: C=${result.runoff?.runoff_coeff || '—'}, Q=${result.runoff?.peak_cfs || '—'} cfs
+          ${result.runoff?.rainfall_source ? ` &nbsp;|&nbsp; Rainfall: ${result.runoff.rainfall_source}` : ''}
+          ${result.runoff?.hsg_adjustment ? ` &nbsp;|&nbsp; HSG ${result.runoff.hsg_adjustment} adjusted` : ''}
+          ${result.runoff?.detention_needed ? ' &nbsp;|&nbsp; <strong style="color:#ef4444;">Detention required</strong>' : ''}</span>
         </p>
         <div class="check-next">
           <strong>What to check next:</strong> ${floodLevel === 'HIGH'
@@ -1090,6 +1104,186 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
     </div>
   `
 
+  // ── Page: AI Brain Analysis (expert findings, site design, tradeoffs) ──
+  const aiReport = result.ai_report || {}
+  const siteDesign = aiReport.site_design || result.site_design || {}
+  const expertFindings = aiReport.expert_findings || result.expert_findings || []
+  const aiTradeoffs = aiReport.tradeoffs || []
+  const aiUnknowns = aiReport.unknowns || []
+  const aiNextSteps = aiReport.next_steps || []
+  const aiVerdict = aiReport.verdict || ''
+  const aiVerdictReason = aiReport.verdict_reason || ''
+  const aiTopReasons = aiReport.top_reasons || []
+  const confidenceSummary = aiReport.confidence_summary || {}
+  const padAlts = siteDesign.pad_alternatives || []
+  const orientScores = siteDesign.orientation_scores || []
+
+  const hasAiContent = aiVerdict || expertFindings.length > 0 || siteDesign.recommended_pad
+
+  const verdictColors = { 'Good Candidate': '#22c55e', 'Proceed with Caution': '#f59e0b', 'Moderate Risk': '#f97316', 'High Risk': '#ef4444' }
+  const aiVerdictColor = verdictColors[aiVerdict] || '#64748b'
+
+  const pageAI = !hasAiContent ? '' : `
+    <div class="page page-break">
+      <h2>AI Brain Analysis</h2>
+      <p style="font-size:11px;color:#64748b;margin-bottom:16px;">SiteSense Brain: 15 GIS layers &rarr; 6 domain experts &rarr; 19 compound risk checks &rarr; feedback loop &rarr; weighted verdict.${
+        result.costs?.compound_premium_pct ? ` Compound cost premium: +${result.costs.compound_premium_pct}%.` : ''
+      }${result.costs?.fire_uplift_pct ? ` Fire zone uplift: +${result.costs.fire_uplift_pct}%.` : ''
+      }${result.foundation?.code_ref?.includes('Upgraded') ? ' Foundation upgraded by expert analysis.' : ''
+      }${result.runoff?.rainfall_source === 'NOAA Atlas 14' ? ' Rainfall: NOAA Atlas 14 (verified).' : ''}</p>
+
+      <!-- AI Verdict -->
+      ${aiVerdict ? `
+      <div style="border-left:6px solid ${aiVerdictColor};background:${aiVerdictColor}11;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <div style="font-size:20px;font-weight:800;color:${aiVerdictColor};margin-bottom:4px;">${aiVerdict}</div>
+        <div style="font-size:13px;color:#334155;line-height:1.6;">${aiVerdictReason}</div>
+        ${aiTopReasons.length > 0 ? `
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:#475569;">
+          ${aiTopReasons.map(r => `<li>${r}</li>`).join('')}
+        </ul>` : ''}
+      </div>` : ''}
+
+      <!-- Confidence -->
+      ${confidenceSummary.overall ? `
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 14px;margin-bottom:16px;">
+        <strong style="font-size:12px;">Data Confidence:</strong>
+        <span style="font-size:12px;color:${confidenceSummary.overall === 'verified' ? '#22c55e' : confidenceSummary.overall === 'partially_verified' ? '#f59e0b' : '#ef4444'};font-weight:600;text-transform:uppercase;"> ${(confidenceSummary.overall || '').replace(/_/g, ' ')}</span>
+        <p style="font-size:11px;color:#64748b;margin:4px 0 0;">${confidenceSummary.reason || ''}</p>
+      </div>` : ''}
+
+      <!-- Expert Findings -->
+      ${expertFindings.length > 0 ? `
+      <h3 style="margin-bottom:10px;">Expert Panel Findings</h3>
+      <table>
+        <thead><tr><th style="width:22%;">Expert</th><th style="width:15%;text-align:center;">Verdict</th><th>Key Findings</th></tr></thead>
+        <tbody>
+          ${expertFindings.map(ef => {
+            const vc = { low_risk: '#22c55e', moderate_risk: '#f59e0b', high_risk: '#ef4444' }
+            const vcolor = vc[ef.verdict] || '#94a3b8'
+            const vLabel = (ef.verdict || '').replace(/_/g, ' ')
+            return `<tr>
+              <td style="font-weight:600;text-transform:capitalize;">${(ef.expert || '').replace(/-/g, ' ')}</td>
+              <td style="text-align:center;"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:10px;font-weight:700;color:#fff;background:${vcolor};">${vLabel}</span></td>
+              <td style="font-size:12px;color:#475569;">
+                ${(ef.reasons || []).map(r => r).join('. ')}
+                ${(ef.risks || []).length > 0 ? '<br><strong style="color:#ef4444;">Risks:</strong> ' + ef.risks.join('; ') : ''}
+                ${(ef.opportunities || []).length > 0 ? '<br><strong style="color:#22c55e;">Opportunities:</strong> ' + ef.opportunities.join('; ') : ''}
+              </td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>` : ''}
+
+      <!-- Tradeoffs -->
+      ${aiTradeoffs.length > 0 ? `
+      <h3 style="margin-top:16px;margin-bottom:8px;">Key Tradeoffs</h3>
+      <ul style="font-size:12px;color:#475569;line-height:1.8;">
+        ${aiTradeoffs.map(t => `<li>${t}</li>`).join('')}
+      </ul>` : ''}
+    </div>
+  `
+
+  // ── Page: Site Design Recommendations ──
+  const hasDesign = siteDesign.recommended_pad || siteDesign.orientation
+  const pageDesign = !hasDesign ? '' : `
+    <div class="page page-break">
+      <h2>Where to Build on This Parcel</h2>
+      <p style="font-size:11px;color:#64748b;margin-bottom:16px;">Data-driven recommendations from terrain analysis, solar modeling, and climate zone assessment.</p>
+
+      <div class="grid2">
+        <!-- Pad Placement -->
+        <div class="card">
+          <div class="card-title">Recommended Building Pad</div>
+          <p style="font-size:13px;color:#334155;line-height:1.6;margin-bottom:10px;">${siteDesign.recommended_pad || 'See analysis'}</p>
+          ${padAlts.length > 0 ? `
+          <table style="font-size:11px;margin-bottom:0;">
+            <thead><tr><th>Position</th><th style="text-align:center;">Score</th><th style="text-align:right;">Avg Slope</th><th style="text-align:right;">Relief</th></tr></thead>
+            <tbody>
+              ${padAlts.slice(0, 5).map((p, i) => `<tr${i === 0 ? ' style="background:#f0fdf4;font-weight:600;"' : ''}>
+                <td style="text-transform:capitalize;">${p.position || ''}</td>
+                <td style="text-align:center;">${p.score || ''}/100</td>
+                <td style="text-align:right;">${p.avgSlope != null ? p.avgSlope.toFixed(1) + '%' : '—'}</td>
+                <td style="text-align:right;">${p.relief != null ? p.relief.toFixed(1) + ' ft' : '—'}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : ''}
+        </div>
+
+        <!-- Orientation -->
+        <div class="card">
+          <div class="card-title">Recommended Orientation</div>
+          <p style="font-size:18px;font-weight:700;color:#02C39A;margin-bottom:4px;">${siteDesign.orientation || '—'}</p>
+          <p style="font-size:12px;color:#475569;margin-bottom:10px;">${siteDesign.orientation_reason || ''}</p>
+          ${siteDesign.climate_zone ? `<p style="font-size:12px;"><strong>Climate Zone:</strong> ${siteDesign.climate_zone}</p>` : ''}
+          ${orientScores.length > 0 ? `
+          <table style="font-size:11px;margin-top:8px;margin-bottom:0;">
+            <thead><tr><th>Direction</th><th style="text-align:right;">Score</th></tr></thead>
+            <tbody>
+              ${orientScores.slice(0, 4).map((o, i) => `<tr${i === 0 ? ' style="background:#f0fdf4;font-weight:600;"' : ''}>
+                <td>${o.label || ''}</td>
+                <td style="text-align:right;">${o.score || ''}/100</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : ''}
+        </div>
+      </div>
+
+      <!-- Window Strategy -->
+      ${(siteDesign.window_strategy || []).length > 0 ? `
+      <div class="section" style="margin-top:16px;">
+        <h3>Window Strategy</h3>
+        <ul style="font-size:12px;color:#475569;line-height:1.8;">
+          ${siteDesign.window_strategy.map(w => `<li>${w}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+      <!-- Room Zoning -->
+      ${(siteDesign.room_zoning || []).length > 0 ? `
+      <div class="section">
+        <h3>Room Placement</h3>
+        <ul style="font-size:12px;color:#475569;line-height:1.8;">
+          ${siteDesign.room_zoning.map(r => `<li>${r}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+      <!-- Driveway -->
+      ${siteDesign.driveway_access ? `
+      <div class="section">
+        <h3>Driveway Access</h3>
+        <p style="font-size:12px;color:#475569;">${siteDesign.driveway_access}</p>
+      </div>` : ''}
+
+      <!-- Unknowns & Next Steps from AI -->
+      ${aiUnknowns.length > 0 ? `
+      <div class="section" style="margin-top:16px;">
+        <h3>What We Don't Know Yet</h3>
+        <ul style="font-size:12px;color:#475569;line-height:1.8;">
+          ${aiUnknowns.map(u => `<li>${u}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+      ${aiNextSteps.length > 0 ? `
+      <div class="section">
+        <h3>Recommended Next Steps</h3>
+        <table style="font-size:12px;">
+          <thead><tr><th>#</th><th>Action</th><th>Who</th><th>Why</th></tr></thead>
+          <tbody>
+            ${aiNextSteps.map((s, i) => `<tr>
+              <td style="text-align:center;font-weight:700;color:#0369a1;">${i + 1}</td>
+              <td style="font-weight:600;">${s.action || ''}</td>
+              <td style="color:#64748b;">${s.who || ''}</td>
+              <td style="color:#475569;font-size:11px;">${s.why || ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+
+      <div class="disclaimer">
+        Site design recommendations are based on terrain analysis and climate heuristics. Professional site planning and architectural design are required before construction.
+      </div>
+    </div>
+  `
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1101,6 +1295,8 @@ function buildReportHTML(result, address, houseResult, forecastResult) {
 <body>
   ${page1}
   ${page2}
+  ${pageAI}
+  ${pageDesign}
   ${page3}
   ${page5}
   ${page6}

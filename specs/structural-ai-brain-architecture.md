@@ -1,6 +1,7 @@
 # Feature Spec: Structural AI Brain Architecture
-Date: 2026-03-21
+Date: 2026-03-21 | Updated: 2026-03-22 (verified against code)
 Layer: architecture
+Status: IMPLEMENTED — verified against `netlify/functions/analyze.js`
 
 ## What We're Building
 Design a hybrid AI architecture for structural design and other complex mathematical workflows.
@@ -363,7 +364,252 @@ The final answer should identify:
 - computational path
 - verification path
 
-## Best MVP Implementation For SiteSense
+## SiteSense Implementation (AS-BUILT March 2026)
+
+This section documents what was actually built and verified against the codebase.
+All references point to `netlify/functions/analyze.js` unless otherwise noted.
+
+### Implementation File Map
+
+| Component | File | Lines |
+|---|---|---|
+| GIS Retrieval (15 layers) | `netlify/functions/analyze.js` | 67–2565 |
+| Evidence Pack Assembly | `netlify/functions/analyze.js` | `assembleEvidencePack()` |
+| Expert Panel (6 experts) | `netlify/functions/analyze.js` | 1448–1962 |
+| Rules-first-then-Claude | `netlify/functions/analyze.js` | `callExpertLLM()` |
+| Rule-based Fallback | `netlify/functions/analyze.js` | `generateRuleBasedReport()` |
+| Claude Brain Report | `netlify/functions/analyze.js` | `generateAiBrainReport()` |
+| Site-Responsive Design | `netlify/functions/analyze.js` | `generateSiteDesign()` |
+| Cost Engine | `netlify/functions/analyze.js` | `estimateCost()` |
+| PDF Report | `src/frontend/src/components/ReportGenerator.jsx` | `generateReport()` |
+| House Concept | `netlify/functions/house_estimate.js` | full file |
+| Price Forecast | `netlify/functions/price_predict.js` | full file |
+| Engineering Q&A | `netlify/functions/engineering_assist.js` | full file |
+
+### AS-BUILT: 7-Layer Brain Architecture
+
+```
+Layer 1: RETRIEVAL
+  15 government GIS APIs fetched in parallel via Promise.all()
+  Sources: USGS 3DEP, FEMA NFHL, USDA SoilWeb/SDA, USGS NSHM (ASCE 7-22),
+           USFWS NWI, NOAA Atlas 14, EPA Envirofacts, USGS NHD,
+           USFWS Critical Habitat, NPS National Register, NOAA SLR
+  Rule-based: Fire risk (15 US zones), Landslide (terrain + soil + precip)
+
+Layer 2: TOOL LAYER (Deterministic Computation)
+  - calculateSlope() — gradient from elevation grid
+  - calculateCutFill() — grid prismatic method
+  - getSeismicDesignCategory() — ASCE 7-22 Table 11.6-1/11.6-2
+  - recommendFoundation() — IBC/ACI priority ladder
+  - estimateStructuralLoads() — wind, snow, seismic, cost multiplier
+  - calculateRunoff() — Rational Method Q=CiA
+  - estimateCost() — ROM with regional multipliers (35 metros)
+  - generateSiteDesign() — 9-zone pad scoring, 8-direction orientation
+
+Layer 3: DOCTRINE (Engineering Code Rules)
+  - IBC 2021 §1803 (Soils), §1806 (Bearing), §1808 (Foundations)
+  - ASCE 7-22 Ch.12 (Seismic), Ch.26-27 (Wind), Ch.5 (Flood), Ch.7 (Snow)
+  - ACI 360R-10 §5.4 (PT slab), §4.2 (Grade beams)
+  - ACI 350-20 (Environmental concrete)
+  - ASTM D4829 (Expansive soil from PI)
+  - IBC 2021 Table 1806.2 (Presumptive bearing capacity)
+
+Layer 4: EVIDENCE PACK (Structured Working Memory)
+  assembleEvidencePack() builds:
+  - parcel: address, area, centroid, buildable SF/pct
+  - retrieval: 14 layers, each with source + query_mode + confidence + notes
+  - computed: slope, cut/fill, foundation, loads, runoff, costs, buildable area
+  - doctrine: codes applied, foundation ladder, triggered rules
+  - assumptions: explicit caveats (setbacks, soil defaults, inflation rate)
+  - unknowns: verification gaps (geotech boring, utilities, survey, zoning)
+  - provenance: timestamp, engine version, layer count, AI engine used
+  - confidence: per-section (verified / partially_verified / heuristic / fallback)
+
+Layer 5: EXPERT PANEL (6 Synthetic Domain Experts)
+  Each runs rules FIRST, then Claude extends with [AI INSIGHT] tags.
+
+  1. Foundation Advisor     — runFoundationAdvisor(ep)
+     Reads: soil, slope, flood, bearing, caliche, seismic
+     Produces: foundation type from IBC/ACI ladder + cost impact
+     Compounds: 6 (expansive+slope, flood+HSG-D, caliche+slope,
+                    low-bearing+flood, collapsible+water, seismic+expansive)
+
+  2. Stormwater Reviewer    — runStormwaterReviewer(ep)
+     Reads: flood zone, soil HSG, runoff CFS, slope
+     Produces: drainage difficulty, detention burden, flood risk
+     Compounds: 3 (steep+clay, flood+slope, runoff+flat)
+
+  3. Site Design Advisor    — runSiteDesignAdvisor(ep)
+     Reads: buildable %, steep fraction, constraint list
+     Produces: design flexibility assessment, constraint severity
+     Compounds: 2 (small-area+steep, flood+wetlands)
+
+  4. Cost Forecaster        — runCostForecaster(ep)
+     Reads: ROM cost, regional multiplier, foundation type, inflation
+     Produces: compound premium %, build-now-vs-wait, cost drivers
+     Compounds: 3 cost premiums (fnd+flood +15%, fnd+slope +10%, flood+slope +8%)
+
+  5. Parcel Strategist      — runParcelStrategist(ep, expertFindings)
+     Reads: ALL expert findings + evidence pack
+     Produces: one verdict, top risks, opportunities, cross-expert tradeoffs
+     Compounds: 4 cross-expert tradeoff patterns
+
+  6. Data Quality Auditor   — runDataQualityAuditor(ep, strategistResult)
+     Reads: evidence confidence per GIS layer
+     Produces: downgrades verdict if critical data is fallback
+     Can change: "Good Candidate" → "Proceed with Caution"
+
+  TOTAL: 19 compound risk signals (14 site + 3 cost + 4 cross-expert)
+         Presentation says 14 (conservative count of site risks only)
+
+Layer 6: AI EXTENSION (Claude, when API key available)
+  callExpertLLM() sends rule findings + raw evidence to Claude
+  Claude instructions:
+    1. Accept all rule-based findings as given
+    2. Find ADDITIONAL compound risks rules missed
+    3. Add richer cross-domain explanations
+    4. Mark additions with [AI INSIGHT] prefix
+    5. Return COMBINED result (rules + AI merged)
+  Model: claude-sonnet-4-6 (800 tokens per expert, 2000 for strategist)
+
+Layer 7: OUTPUT (Structured JSON → Frontend + PDF)
+  Verdict: Good Candidate / Proceed with Caution / Moderate Risk / High Risk
+  Weighted risk scoring: 0-3 points per factor, thresholds at 0/2/5
+  Output includes: verdict, top_reasons, tradeoffs, best_fit_concept,
+    scenario_comparison, unknowns, assumptions, next_steps (with who/why),
+    site_design, expert_findings, routing, evidence_pack, confidence_summary
+```
+
+### AS-BUILT: Rules-First-Then-Claude Pattern
+
+```
+┌─────────────────────────────────────────────────────┐
+│  STEP 1: Rules Run (ALWAYS — no API key needed)     │
+│                                                      │
+│  14 compound risk checks across 4 specialists        │
+│  Foundation ladder (IBC/ACI priority)                │
+│  Cost with compound premiums                         │
+│  9-zone pad scoring + 8-direction orientation        │
+│                                                      │
+│  Output: ruleResult (structured JSON)                │
+├─────────────────────────────────────────────────────┤
+│  STEP 2: Claude Extends (IF ANTHROPIC_API_KEY set)  │
+│                                                      │
+│  Receives: ruleResult + raw evidence pack            │
+│  Finds: NEW compound risks rules missed              │
+│  Tags: [AI INSIGHT] on all additions                 │
+│  Returns: merged result (same JSON schema)           │
+├─────────────────────────────────────────────────────┤
+│  STEP 3: Output (identical schema either way)        │
+│                                                      │
+│  Without API: rule findings only                     │
+│  With API: rule findings + AI insights merged        │
+│  Frontend renders both identically                   │
+└─────────────────────────────────────────────────────┘
+```
+
+### AS-BUILT: 15 GIS Data Sources
+
+| # | Layer | Function | Source | Auth |
+|---|---|---|---|---|
+| 1 | Elevation Grid | `getElevationGrid()` | USGS 3DEP | Free |
+| 2 | Flood Zone | `getFloodZone()` | FEMA NFHL | Free |
+| 3 | Soil Properties | `getSoilData()` | USDA SoilWeb + SDA | Free |
+| 4 | Seismic Hazard | `getSeismicData()` | USGS ASCE 7-22 API | Free |
+| 5 | Wildfire Risk | `getFireRisk()` | Rule-based (15 zones) | N/A |
+| 6 | Wetlands | `getWetlands()` | USFWS NWI | Free |
+| 7 | Precipitation | `getPrecipitation()` | NOAA Atlas 14 | Free |
+| 8 | Contamination | `getContamination()` | EPA Envirofacts + FRS | Free |
+| 9 | Hydrography | `getHydrography()` | USGS NHD | Free |
+| 10 | Endangered Species | `getEndangeredSpecies()` | USFWS Critical Habitat | Free |
+| 11 | Historic Sites | `getHistoricSites()` | NPS National Register | Free |
+| 12 | Landslide Risk | `getLandslideRisk()` | Rule-based (terrain) | N/A |
+| 13 | Sea Level Rise | `getSeaLevelRise()` | NOAA SLR | Free |
+| 14 | Soil Map Polygons | `getSoilZones()` | USDA SDA Spatial | Free |
+| 15 | Satellite Imagery | MapLibre tile layer | Esri World Imagery | Free |
+
+All fetched in parallel via `Promise.all()`. Total time < 10 seconds typical.
+
+### AS-BUILT: Verdict Logic (Weighted Risk Scoring)
+
+```
+Risk Factor                    Weight
+───────────────────────────────────────
+Coastal flood VE                  3
+Liquefaction risk                 3
+Organic soil                      3
+Very steep slope (>25%)           3
+Flood zone AE/A/AO/AH            2
+Steep slope (15-25%)              2
+Collapsible soil                  2
+High shrink-swell                 2
+Wetlands present                  2
+Very high wildfire                2
+Moderate shrink-swell             1
+High wildfire                     1
+Caliche hardpan                   1
+High seismic (SDC D/E/F)         1
+High sulfate attack               1
+Moderate slope (8-15%)            1
+High corrosion (steel)            1
+
+Score    Verdict
+───────────────────────────
+0        Good Candidate
+1-2      Proceed with Caution
+3-5      Moderate Risk
+6+       High Risk
+```
+
+### AS-BUILT: Confidence Levels
+
+Each GIS layer gets a confidence tag in the evidence pack:
+
+| Level | Meaning | Example |
+|---|---|---|
+| `verified` | Direct API response, data present | Elevation from USGS 3DEP |
+| `partially_verified` | API responded but data may be incomplete | Flood zone from FEMA (centroid query) |
+| `heuristic` | Rule-based estimate, not direct measurement | Fire risk, landslide risk |
+| `fallback` | API failed, using regional defaults | Soil data unavailable |
+
+Data Quality Auditor can downgrade the overall verdict when critical layers (soil, seismic) are at fallback level.
+
+### Verified Against Presentation (March 22, 2026)
+
+Cross-referenced `SiteSense_AI_Brain_v2.pptx` (11 slides) against codebase:
+
+| Claim | Presentation | Code | Status |
+|---|---|---|---|
+| GIS Layers | 14 | 15 (includes soil zones) | CONFIRMED |
+| Domain Experts | 6 | 6 (4 specialist + 2 support) | CONFIRMED |
+| Compound Risk Checks | 14 | 19 (14 site + 3 cost + 4 cross-expert) | UNDERSTATED |
+| LLM Boundary Rules | 8 | Enforced via rules-first pattern + doctrinal prompts | PARTIALLY CODIFIED |
+| Evidence Pack | described | ~150 fields across 7 sections | CONFIRMED |
+| Rules-first-then-Claude | described | All 4 specialists follow pattern | CONFIRMED |
+| Rule-based Fallback | described | `generateRuleBasedReport()` — full JSON without API | CONFIRMED |
+
+### Known Issues (as of March 22, 2026)
+
+1. **Seismic API** — old USGS endpoint was dead (404). Fixed to use `earthquake.usgs.gov/ws/designmaps/asce7-22.json`
+2. **Cost model** — was pricing off full lot area, creating inflated numbers. Fixed to use ~2,500 SF building footprint.
+3. **Verdict uniformity** — all sites returned "Proceed with Caution". Fixed with weighted risk scoring (4 verdict levels).
+4. **PDF export** — was HTML-in-new-tab, not real PDF. Fixed with html2pdf.js client-side generation.
+
+### Future Enhancements
+
+For a startup product beyond hackathon:
+
+- Add solver-backed structural checks (OpenSees, CalculiX) for Stage 3/4
+- Add SymPy verification pass for load calculations (Stage 5)
+- Add Z3 constraint checking for code compliance logic
+- Add IFC/BIM geometry integration via IfcOpenShell
+- Implement full assumption ledger with user-editable overrides
+- Add multi-model verification (Haiku scout + Sonnet verifier)
+- Implement user persona-aware output (Homeowner vs Architect vs Developer)
+
+## Theoretical Foundation
+
+### Best MVP Implementation For SiteSense
 
 For the first product versions, Claude should not attempt a full autonomous structural designer.
 

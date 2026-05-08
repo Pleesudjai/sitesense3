@@ -72,7 +72,10 @@ export default function App() {
       const res = await analyzeParcel(polygon, { ...prefs, address })
       setResult(res.data)
     } catch (e) {
-      setError(e.message)
+      const msg = e.message === 'Failed to fetch'
+        ? 'Could not reach the server — check your connection or try a smaller parcel. The analysis may have timed out.'
+        : e.message
+      setError(msg)
     } finally {
       setLoading(false)
     }
@@ -236,6 +239,7 @@ export default function App() {
                       <div className={`rounded-lg p-3 border-l-4 ${
                         result.ai_report.verdict === 'Good Candidate' ? 'bg-green-950/30 border-green-500' :
                         result.ai_report.verdict === 'High Risk' ? 'bg-red-950/30 border-red-500' :
+                        result.ai_report.verdict === 'Moderate Risk' ? 'bg-orange-950/30 border-orange-500' :
                         'bg-amber-950/30 border-amber-500'
                       }`}>
                         <p className="text-sm font-bold text-white">{result.ai_report.verdict}</p>
