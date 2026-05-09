@@ -476,3 +476,53 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 This is the YC-pitch artifact. From "draw a pin, get a report" to "type an APN, get a printable feasibility analysis with citations."
 
 **Next:** The remaining architecture-doc tools (utility_avail, title_pull, comps_cost) sharpen the report but the MVP shape is set. Could pivot to: (a) packaging the agent behind an HTTP endpoint for the existing React frontend; (b) testing on a real R1-6 / R1-8 Tempe SFR to see a 'buildable' verdict instead of NOT-RECOMMENDED; (c) adding playwright PDF auto-render so the deliverable is .pdf instead of .html.
+
+---
+
+## 2026-05-08 — zoning_lookup expansion: 5-city Maricopa coverage
+
+**What was built:** Refactored `zoning_lookup` from a Tempe-only tool into a city dispatcher covering five Maricopa jurisdictions: **Tempe, Phoenix, Mesa, Scottsdale, Gilbert**. Each city is a separate module with its own ArcGIS REST endpoint, field mapping, and dimensional-standards table. The dispatcher accepts an optional `city` hint (passed by the agent from parcel_lookup's PHYSICAL_CITY); if the hint is absent or wrong, all 5 endpoints are queried in parallel via Promise.allSettled and the first match wins.
+
+**Endpoints (all public, no auth):**
+- Tempe: `services.arcgis.com/lQySeXwbBg53XWDi/.../zoning_districts/FeatureServer/1` (TempeData, AGOL)
+- Phoenix: `services6.arcgis.com/u2Q4oAfciDZpDAD8/.../Zoning_PhoenixAZ/FeatureServer/0` (community-curated mirror; official maps.phoenix.gov returns 404 from non-browser)
+- Mesa: `services2.arcgis.com/1gVyYKfYgW5Nxb1V/.../Zoning/FeatureServer/2` (ITDGIS = Mesa IT Department)
+- Scottsdale: `maps.scottsdaleaz.gov/arcgis/rest/services/OpenData/MapServer/24` (official)
+- Gilbert: `maps.gilbertaz.gov/arcgis/rest/services/OD/Growth_Development_Maps_1/MapServer/8` (Town of Gilbert)
+
+**Dimensional tables encoded (best-effort, medium-low confidence with explicit "verify with planning department" notes):**
+- Tempe: R1-4/5/6/7/8/10/15, R1-PAD, R-2/3/3R/4/5, MU-2/3/4 (16 codes)
+- Phoenix: R1-6/8/10/14/18/35, R-2/3/4/5, C-1/2/3 (13 codes)
+- Mesa: AG, RS-43/35/15/9/7/6, RM-2/3/4, OC, LC, GC, DR-1/2 (14 codes)
+- Scottsdale: R1-7/10/18/35/43/130, R-2/3/4, C-2/3 (11 codes)
+- Gilbert: AG, SF-43/15/10/8.5/7/6/5, MF-2/3, GO, NS, RC (13 codes)
+- Codes outside the table (overlay districts, downtown form-based codes, etc.) return jurisdiction + code + a "consult ordinance" note with low confidence — the agent hedges appropriately.
+
+**Coverage gap acknowledged in code:** Chandler, Goodyear, Avondale, Surprise, Peoria, and Maricopa County unincorporated are NOT yet covered. When the dispatcher exhausts all 5 cities without a match it returns `jurisdiction="Outside covered jurisdictions"` with `cities_tried` so the agent can tell the user explicitly. Chandler in particular has its zoning data in a different shape (per-parcel ordinance overlay rather than continuous polygon coverage) that needs a different module pattern; deferred.
+
+**Verified spatial dispatch on 5 real points:**
+- (33.44574, -111.91728) Tempe Dorsey Ln → R1-4 (medium confidence, Single-Family 4,000 sf)
+- (33.4720, -112.0935) Phoenix Encanto → R1-6 (medium, Single-Family 6,000 sf)
+- (33.3964, -111.7182) East Mesa → RS-6 (medium, Single-Residence 6,000 sf)
+- (33.4942, -111.9261) Scottsdale Old Town → D/RS-1 DO (low — downtown overlay code, not in table; agent told to consult ordinance)
+- (33.3528, -111.7890) Gilbert Heritage Village → HVC (low — Heritage Village Center, special district)
+
+The graceful "low confidence + consult ordinance" path is itself a feature: the tool refuses to fabricate setback values for codes it doesn't know.
+
+**File structure:**
+```
+src/agent/src/mcp/
+  zoning_lookup.ts          ← dispatcher (small)
+  zoning/
+    types.ts                ← ZoningResult, CityModule
+    helpers.ts              ← queryArcGisPoint, asString, buildResult
+    tempe.ts
+    phoenix.ts
+    mesa.ts
+    scottsdale.ts
+    gilbert.ts
+```
+
+The pattern is set: adding Chandler / Goodyear / Avondale / etc. is now ~80 lines of dimensional table per city. The unglamorous half of the moat is the slog of these tables; the dispatcher pattern makes the slog mechanical.
+
+**Next next:** Chandler module (different schema), Maricopa County unincorporated, then utility_avail / title_pull / comps_cost, then the HTTP/frontend layer.
