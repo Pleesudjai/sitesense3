@@ -287,3 +287,45 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Files changed:** see commit diff. Net: +1,454 / -267 in 16 modified files, plus 16 new skills, 6 new docs, 2 new scripts, root `package.json`/`package-lock.json`.
 
 **Next:** Begin Agent SDK rewrite per `docs/agent-sdk-architecture.md`: pick MVP county (recommend Maricopa), pick report template (recommend 1-page), `npm install @anthropic-ai/claude-agent-sdk`, build `parcel_lookup` MCP tool first.
+
+---
+
+## 2026-05-08 — Agent SDK MVP — parcel_lookup tool + agent loop verified
+
+**What was built:** TypeScript scaffold under `src/agent/` running `@anthropic-ai/claude-agent-sdk` with one in-process MCP tool (`parcel_lookup`) targeting Maricopa County. Verified end-to-end against real APN `13209099` (Tempe, 1681 sf) — agent called the tool, reasoned over the parcel record, and produced a structured feasibility report with citations.
+
+**MVP decisions locked:**
+- County: Maricopa only.
+- Report: 1-page PDF schema (parcel summary, zoning envelope, constraints, buildable area, red flags, recommendation, citations).
+- Code location: new top-level `src/agent/` (TypeScript). Hackathon Netlify Functions left in place as reference.
+
+**Why this approach:** The Agent SDK gives us the tool-use audit trail and reasoning loop for free. In-process MCP server (`createSdkMcpServer` + `tool`) is simpler than spawning subprocess MCP servers and matches the in-band lifecycle the SiteSense backend wants.
+
+**Maricopa endpoint verified:**
+- `https://gis.mcassessor.maricopa.gov/arcgis/rest/services/Parcels/MapServer/0/query`
+- Real schema: `APN`, `APN_DASH`, `OWNER_NAME`, `LAND_SIZE` (sf), `CITY_ZONING` (often "CONTACT LOCAL JURISDICTION"), `PHYSICAL_ADDRESS`, `LATITUDE`/`LONGITUDE`, `PUC` (Property Use Code).
+- Tool queries on both `APN=` and `APN_DASH=` so dashed and flat input both work.
+- The frequent `CITY_ZONING='CONTACT LOCAL JURISDICTION'` confirms a separate `zoning_lookup` tool against the city's GIS is needed — consistent with the architecture-doc moat.
+
+**Agent reasoning quality on first run:**
+- Caught that PUC `8530` may indicate a non-buildable parcel type (common-element / remnant / ROW fragment).
+- Hedged buildable-area estimate as "Insufficient data for reliable estimate" rather than fabricating.
+- Returned NOT-RECOMMENDED with multi-factor reasoning + 5 next-steps including the actual City of Tempe Planning phone number.
+- Citations included the literal REST URL with timestamp.
+
+**Files created:**
+- `src/agent/package.json`, `tsconfig.json`, `.env.example`, `.gitignore`-respected `.env`
+- `src/agent/src/agent.ts` — `runFeasibilityAgent(apn)` entry
+- `src/agent/src/prompt.ts` — system prompt
+- `src/agent/src/types.ts` — `ParcelRecord`, `FeasibilityReport`, `Citation`
+- `src/agent/src/mcp/server.ts` — in-process MCP server registration
+- `src/agent/src/mcp/parcel_lookup.ts` — Maricopa parcel tool
+- `src/agent/test/parcel_lookup.test.ts` — standalone tool test (no API key)
+- `src/agent/test/e2e.test.ts` — full agent loop test
+- `src/agent/README.md` — setup + run instructions
+
+**Open follow-ups:**
+- Reconcile `types.ts` with the richer schema Claude actually produced (it added `report_meta`, structured citations with `id`/`fields_used`/`fetched_at`). Either tighten the prompt to enforce the leaner schema, or update the type to match. Probably update the type.
+- `verdict` value mismatch — Claude returned `"NOT-RECOMMENDED"` (hyphen), type expects `not_recommended` (underscore). Pick one and pin in prompt.
+
+**Next:** Build tool 2 — `flood_zone` (FEMA NFHL by centroid). Then `topo_slope` (USGS 3DEP). Three tools is the threshold where cross-source reasoning becomes meaningful.
