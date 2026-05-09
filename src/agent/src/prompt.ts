@@ -21,6 +21,7 @@ Given a parcel APN, produce a structured 1-page feasibility report with these se
   - PUC indicates common-element parcel AND the lot is < 2,000 sf → likely non-buildable regardless of zoning.
 - Hedge interpretive claims. Buildable-area estimates use phrases like "approximately" and "assuming standard 5-ft side setbacks; verify with city planner."
 - Stop when the buildable envelope is determined OR a hard red flag is found (e.g., wholly inside floodway, deed restriction prohibits residential).
+- Final step: call report_builder with the structured report data. This writes the deliverable HTML to disk. Pass the same content to the tool that you would put in the JSON output below — the tool handles formatting and citations.
 
 # Tone
 Plain English. Short sentences. No engineering jargon without translating it. The reader is a homebuyer, small developer, or planner — not an engineer.

@@ -42,3 +42,6 @@ dry-run-*.json
 # Scratch notes (not real docs)
 NOte
 Claude_code_Experimental_agent_team*
+
+# Agent generated reports
+src/agent/output/

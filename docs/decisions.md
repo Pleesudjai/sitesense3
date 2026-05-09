@@ -433,3 +433,46 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - Patch hackathon `analyze.js` FEMA URL (still pending).
 
 **Next tool:** `utility_avail` (SRP electric, Tempe water/sewer service area lookups). Or pivot to `report_builder` (use the existing `docx` skill to actually generate the 1-page PDF) so the MVP can produce a real deliverable. Recommend report_builder first — it lets us demo a real artifact.
+
+---
+
+## 2026-05-08 — Agent SDK Tool 8 (out of order) — report_builder + MVP DELIVERABLE COMPLETE
+
+**What was built:** The deliverable. Tool 8 from the architecture-doc list, built before utility/title/comps because it's what the user actually receives. Renders structured input → styled 1-page printable HTML on disk. Uses `marked` for Markdown body sections and writes to `src/agent/output/sitesense-{apn}-{ts}.html`.
+
+**Design choice — HTML, not docx:**
+- The architecture doc said "use the docx skill" but the OS-level Claude `docx` skill is invoked via the Skill tool, not directly callable from inside a TypeScript Agent SDK tool.
+- HTML is the simplest reliable path: Letter-size print CSS, 0.6" margins, color-coded verdict banner, monospace inline code, citations in numbered footer, locked disclaimer. Cmd-P → PDF.
+- Playwright is already in root deps; auto-PDF can be added in v0.2 with `chromium.launch(); page.setContent(html); page.pdf()`. Deferred to keep the MVP friction-free (no browser binaries needed).
+
+**Tool input schema:**
+- `apn`, `address`, `verdict` (enum: buildable / proceed_with_caution / not_recommended), `verdict_one_liner`
+- `sections`: array of `{heading, body_md}` — agent writes the Markdown directly
+- `citations`: array of `{claim, source, url}`
+- All required, schema-enforced via zod. Tool prints to disk in print-ready CSS and returns `{html_path, size_bytes, apn, generated_at}`.
+
+**5-tool e2e verified (APN 13209099):**
+- Agent called all five tools in correct order: parcel_lookup → flood_zone → topo_slope → zoning_lookup → report_builder.
+- 7.7 KB HTML written to `output/sitesense-13209099-{ts}.html`.
+- Six sections produced: Parcel Summary, Zoning Envelope, Constraints, Buildable Area Estimate, Red Flags, Recommendation.
+- Four numbered citations with auditable URLs.
+- New cross-tool insight surfaced this run: agent computed setback depth math = (29 ft lot depth) − (15 ft front) − (20 ft rear) = **−6 ft**. A negative buildable depth is a geometric impossibility distinct from the lot-size violation. That's another instance of the agent finding a failure mode the input data doesn't directly state.
+
+**Files added/changed:**
+- `src/agent/src/mcp/report_builder.ts` — new tool (~200 lines: schema, zod validation, marked-rendered Markdown, embedded print CSS, color-coded verdict banner, citation footer)
+- `src/agent/src/mcp/server.ts` — registers report_builder
+- `src/agent/src/prompt.ts` — instructs agent to call report_builder as final step
+- `src/agent/test/report_builder.test.ts` — standalone test fed with synthetic input modeled on real 4-tool agent output
+- `src/agent/package.json` — `test:report` script + `marked` dep
+- `.gitignore` — excludes `src/agent/output/` so generated reports don't pollute the repo
+
+**MVP status — what's now end-to-end:**
+- Input: APN string
+- Agent: 5-tool autonomous loop with cross-source synthesis
+- Output: structured JSON FeasibilityReport + styled 1-page HTML report ready to print to PDF
+- Citations: every claim backed by a tool URL, timestamped
+- Hedging: setbacks marked medium-confidence, slope marked degraded when sub-resolution, common-element flags surfaced
+
+This is the YC-pitch artifact. From "draw a pin, get a report" to "type an APN, get a printable feasibility analysis with citations."
+
+**Next:** The remaining architecture-doc tools (utility_avail, title_pull, comps_cost) sharpen the report but the MVP shape is set. Could pivot to: (a) packaging the agent behind an HTTP endpoint for the existing React frontend; (b) testing on a real R1-6 / R1-8 Tempe SFR to see a 'buildable' verdict instead of NOT-RECOMMENDED; (c) adding playwright PDF auto-render so the deliverable is .pdf instead of .html.
