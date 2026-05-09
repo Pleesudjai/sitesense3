@@ -360,3 +360,33 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 **Next tool:** `topo_slope` (USGS 3DEP DEM). Will use the parcel boundary GeoJSON (not just centroid) so we can compute slope distribution across the lot, not just at the centerpoint.
 
 **Open follow-up:** Patch `netlify/functions/analyze.js` to use the new FEMA URL + STATIC_BFE field so the live hackathon site stops silently falling back to Zone X.
+
+---
+
+## 2026-05-08 — Agent SDK Tool 3 — topo_slope (USGS 3DEP) + 3-tool synthesis verified
+
+**What was built:** Third MCP tool. Wraps USGS 3DEP DEM via the Elevation Point Query Service (EPQS). Input is a bbox (min/max lat and lon) plus optional grid resolution. Samples elevation at grid_size² points in parallel, computes slope by central difference at each cell, returns mean/max/min/relief elevation in feet, mean and max slope %, and the fraction of cells exceeding 15% (Hillside Overlay threshold) and 25%.
+
+**Tool design choice:** bbox input (not polygon coordinates) keeps the JSON tool input small and the agent uses the parcel boundary ring's min/max to derive it. Default grid_size=5 (25 EPQS calls) is fine for sub-1-acre parcels; agent is instructed to use grid_size=10 for larger lots. Hillside-overlay heuristic: max slope > 15% OR mean > 10% triggers the flag (per architecture-doc threshold; common in AZ municipal codes).
+
+**EPQS behavior:** returns sentinel values like -1000000 for "no data" (over water, outside CONUS coverage). Tool gates on `value > -900`. Median-fill for missing samples; throws if more than half the samples are missing.
+
+**Spot-check validation:**
+- Tempe APN 13209099 (1681 sf, ~14 ft cells): 1.0% mean slope, 1.7% max, 0.8 ft relief, hillside flag=false. Matches the flat Salt River Valley.
+- Camelback Mountain south face (2.5 acres, 83 ft cells): 59% mean slope, 87% max, 100% of cells > 15%, 330 ft relief, hillside flag=true. Real mountain.
+- Flagstaff 100-acre bbox at grid 5 (533 ft cells): mean slope only 3.3% — cell width too coarse, slope averaged out. Fix: agent should use grid_size=10 for larger lots; documented in the prompt.
+
+**3-tool agent loop verified (APN 13209099):**
+- Tool sequence chosen by the agent: parcel_lookup → flood_zone → topo_slope.
+- Agent extracted the topo_slope bbox from the boundary ring unprompted (the system prompt described how, and Claude executed it).
+- Three citations, all with auditable URLs.
+- Cross-source synthesis: agent now explicitly distinguishes physical vs legal risk — "physical constraints (slope, flood zone) are manageable, the legal and regulatory uncertainty is too high to recommend proceeding." That synthesis is the moat — a script cannot weigh PUC 8530 + zoning unknown + lot < 2,000 sf against flat-site-no-flood and produce that verdict.
+
+**Files added/changed:**
+- `src/agent/src/mcp/topo_slope.ts` — new tool (170 lines, parallel EPQS, slope by central difference, hillside heuristic)
+- `src/agent/src/mcp/server.ts` — registers topo_slope, updated parcel_lookup description
+- `src/agent/src/prompt.ts` — adds topo_slope sequencing instructions
+- `src/agent/test/topo_slope.test.ts` — standalone tool test (defaults to Tempe APN bbox, accepts overrides)
+- `src/agent/package.json` — `test:slope` script
+
+**Next tool:** `zoning_lookup` (Tempe city zoning REST). The Maricopa Assessor returns "CONTACT LOCAL JURISDICTION" for zoning, so we need a city-side tool. This is the moat tool per the architecture doc — every city is different. Start with Tempe, then templatize. Could also do `utility_avail` (SRP/APS/Tempe water) if zoning blocks on schema discovery.
