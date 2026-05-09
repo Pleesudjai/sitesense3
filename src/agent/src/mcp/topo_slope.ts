@@ -84,6 +84,24 @@ const median = (xs: number[]): number => {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 };
 
+const degradedRecord = (
+  input: TopoSlopeInput,
+  n: number,
+  validCount: number,
+  note: string,
+): TopoSlopeRecord => ({
+  grid_size: n,
+  cell_width_ft: 0,
+  area_acres_bbox: 0,
+  elevation: { mean_ft: 0, min_ft: 0, max_ft: 0, relief_ft: 0 },
+  slope: { mean_pct: 0, max_pct: 0, frac_over_15_pct: 0, frac_over_25_pct: 0 },
+  hillside_overlay_likely: false,
+  hillside_overlay_note: note,
+  missing_samples: n * n - validCount,
+  source: USGS_EPQS,
+  fetched_at: new Date().toISOString(),
+});
+
 export const topoSlope = async (
   rawInput: TopoSlopeInput,
 ): Promise<TopoSlopeRecord> => {
@@ -101,10 +119,13 @@ export const topoSlope = async (
   }
   const raw = await Promise.all(tasks);
   const valid = raw.filter((v): v is number => v !== null);
-  if (valid.length < Math.ceil((n * n) / 2)) {
-    throw new Error(
-      `USGS EPQS returned too few valid samples (${valid.length} of ${n * n}). Bbox may be over water or outside CONUS coverage.`,
-    );
+  // EPQS resolution is ~10 m. For very small parcels (bbox < ~100 ft on a side) the grid
+  // points fall within a single DEM cell and EPQS may return identical values or null.
+  // Don't throw — degrade gracefully so the agent can keep going with the other tools.
+  if (valid.length === 0) {
+    const note =
+      'USGS EPQS returned no valid elevation samples for this bbox. The parcel may be outside CONUS DEM coverage, over water, or smaller than the EPQS resolution (~10 m / ~33 ft). No slope data available.';
+    return degradedRecord(input, n, 0, note);
   }
   const fillValue = median(valid);
   const filled = raw.map((v) => v ?? fillValue);

@@ -390,3 +390,46 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `src/agent/package.json` — `test:slope` script
 
 **Next tool:** `zoning_lookup` (Tempe city zoning REST). The Maricopa Assessor returns "CONTACT LOCAL JURISDICTION" for zoning, so we need a city-side tool. This is the moat tool per the architecture doc — every city is different. Start with Tempe, then templatize. Could also do `utility_avail` (SRP/APS/Tempe water) if zoning blocks on schema discovery.
+
+---
+
+## 2026-05-08 — Agent SDK Tool 4 — zoning_lookup (Tempe) + real buildable envelope
+
+**What was built:** Fourth MCP tool. Combines a spatial query against Tempe's public zoning_districts FeatureServer (hosted on AGOL, not the access-restricted gis.tempe.gov) with an in-code Tempe ZDC dimensional-standards table for residential and mixed-use districts. Returns the GIS-confirmed zoning code, district name, category, min lot size, front/side/rear setbacks, max height, max density, and a confidence rating + verification note for every value.
+
+**Endpoint:** `https://services.arcgis.com/lQySeXwbBg53XWDi/arcgis/rest/services/zoning_districts/FeatureServer/1/query`
+- Owner: TempeData (official City of Tempe ArcGIS account on AGOL).
+- Field: `ZoningCode` (coded-value domain with all Tempe zones: R1-4 through R1-15, R-2 through R-5, MU-2/3/4, CC, CSS, RCC, etc.).
+- Note: gis.tempe.gov returns 403 from non-browser clients (likely WAF or auth). The AGOL mirror is the reliable public path.
+
+**Tempe ZDC dimensional table:** Hard-coded in the tool for the most common residential zones (R1-4 through R1-15, R1-PAD, R-2 through R-5) plus MU-2/3/4. Each entry carries a `confidence` rating and a `note` field telling the agent to flag values as approximate. PAD and form-based-code MU districts return null for setbacks (because standards are set per-PAD or by the form-based code, which the table cannot encode generically) — the agent is instructed to direct the user to Tempe Planning in those cases.
+
+**4-tool agent loop verified (APN 13209099, Tempe condo lot):**
+- Tool sequence: parcel_lookup → flood_zone + topo_slope + zoning_lookup (last 3 in parallel).
+- Agent output a real buildable envelope calc:
+  - Lot extracted from boundary ring: ~65 ft × ~38 ft (irregular L-shape).
+  - R1-4 setbacks: front 15 ft, side 5 ft, rear 20 ft.
+  - Footprint = (65 − 2×5) × (38 − 15 − 20) = 55 × 3 = ~165 sf "effectively unbuildable; ~3 ft of unencumbered depth between front and rear setbacks."
+- Hard code violation surfaced: 1,681 sf actual vs 4,000 sf R1-4 minimum, 2,319 sf deficit (58% below). Verdict went from hedged "probably can't build" to definitive "below minimum, requires variance — outcome uncertain."
+- Compound red flags: lot-size-deficit (CRITICAL) + setbacks-consume-all-depth (CRITICAL) + PUC-8530-may-be-common-element (HIGH) + Zone X shaded (MODERATE) + slope unavailable (LOW) + no easement data (LOW). Stratified severity, not the flat "everything is HIGH" of single-tool runs.
+- Four citations, all with auditable URLs.
+
+**Cleanup also in this commit:**
+1. Robust JSON extractor in `agent.ts` — Claude's responses now include reasoning/explanation BEFORE the JSON code block (which is fine, even desirable), but the previous parser only handled the case where the entire response was a JSON code block. New extractor: try fenced ```json ... ``` block first, fall back to first balanced `{...}` object using a depth/string-aware scanner.
+2. Graceful degradation in `topo_slope.ts` — previously threw if more than half the EPQS samples were missing. Problem: for very small parcels (< ~100 ft on a side) the grid is sub-DEM-resolution and EPQS legitimately returns null for most points. New behavior: only error if zero samples are valid; otherwise fill with median and let `missing_samples` count surface the data quality. Added `degradedRecord()` helper for the no-data case.
+
+**Files added/changed:**
+- `src/agent/src/mcp/zoning_lookup.ts` — new tool
+- `src/agent/src/mcp/server.ts` — registers zoning_lookup
+- `src/agent/src/prompt.ts` — adds zoning_lookup to the parallel call set + buildable-envelope formula
+- `src/agent/src/agent.ts` — robust JSON extraction
+- `src/agent/src/mcp/topo_slope.ts` — graceful degradation
+- `src/agent/test/zoning_lookup.test.ts` — standalone test
+- `src/agent/package.json` — `test:zoning` script
+
+**Open follow-ups:**
+- Tempe ZDC dimensional table is hand-encoded and confidence-rated medium. Next polish: scrape current ZDC tables programmatically and bump confidence to high.
+- `types.ts` `FeasibilityReport` still doesn't match the schema Claude is producing. Defer until tools 5-7 are in.
+- Patch hackathon `analyze.js` FEMA URL (still pending).
+
+**Next tool:** `utility_avail` (SRP electric, Tempe water/sewer service area lookups). Or pivot to `report_builder` (use the existing `docx` skill to actually generate the 1-page PDF) so the MVP can produce a real deliverable. Recommend report_builder first — it lets us demo a real artifact.

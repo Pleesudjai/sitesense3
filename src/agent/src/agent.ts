@@ -44,15 +44,53 @@ export const runFeasibilityAgent = async (apn: string): Promise<RunResult> => {
     }
   }
 
-  let report: FeasibilityReport | null = null;
-  try {
-    const cleaned = finalText.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
-    report = JSON.parse(cleaned) as FeasibilityReport;
-  } catch {
-    report = null;
-  }
+  return {
+    report: extractJsonReport(finalText),
+    raw_text: finalText,
+    tool_calls: toolCalls,
+  };
+};
 
-  return { report, raw_text: finalText, tool_calls: toolCalls };
+const extractJsonReport = (text: string): FeasibilityReport | null => {
+  const trimmed = text.trim();
+  // 1. Fenced ```json ... ``` block anywhere in the text.
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim()) as FeasibilityReport;
+    } catch {
+      /* fall through */
+    }
+  }
+  // 2. First {...} balanced JSON object in the text.
+  const start = trimmed.indexOf('{');
+  if (start >= 0) {
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    for (let i = start; i < trimmed.length; i++) {
+      const ch = trimmed[i]!;
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(trimmed.slice(start, i + 1)) as FeasibilityReport;
+          } catch {
+            return null;
+          }
+        }
+      }
+    }
+  }
+  return null;
 };
 
 const isMain = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('agent.ts');

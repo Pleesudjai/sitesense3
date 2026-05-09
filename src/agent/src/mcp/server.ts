@@ -2,6 +2,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { parcelLookup, parcelLookupSchema } from './parcel_lookup.js';
 import { floodZone, floodZoneSchema } from './flood_zone.js';
 import { topoSlope, topoSlopeSchema } from './topo_slope.js';
+import { zoningLookup, zoningLookupSchema } from './zoning_lookup.js';
 
 export const sitesenseMcpServer = createSdkMcpServer({
   name: 'sitesense',
@@ -9,7 +10,7 @@ export const sitesenseMcpServer = createSdkMcpServer({
   tools: [
     tool(
       'parcel_lookup',
-      'Look up a Maricopa County parcel by APN. Returns lot size, owner, current use code (PUC), zoning code (often "CONTACT LOCAL JURISDICTION"), address, centroid (lat/lon), and boundary GeoJSON. Throws if APN is not found. The centroid is the input for flood_zone; the boundary coordinates are used to derive the bbox for topo_slope.',
+      'Look up a Maricopa County parcel by APN. Returns lot size, owner, current use code (PUC), assessor zoning code (often "CONTACT LOCAL JURISDICTION" — use zoning_lookup for the real district), address, centroid (lat/lon), and boundary GeoJSON. Throws if APN is not found. The centroid is the input for flood_zone and zoning_lookup; the boundary coordinates are used to derive the bbox for topo_slope.',
       parcelLookupSchema.shape,
       async (args) => {
         const record = await parcelLookup(args);
@@ -40,6 +41,17 @@ export const sitesenseMcpServer = createSdkMcpServer({
         };
       },
     ),
+    tool(
+      'zoning_lookup',
+      'Look up the City of Tempe zoning district at a point (lat/lon). Returns the GIS-confirmed zoning code (e.g., R1-4, R-3, MU-3) plus dimensional standards from the Tempe ZDC: min lot size, front/side/rear setbacks (ft), max height (ft), and max density (du/acre). Setbacks and density values are best-effort from the ordinance and carry a confidence rating — use them to compute a first-pass buildable envelope, but always note the agent\'s note field and tell the user to verify with Tempe Planning before committing. If the point is outside Tempe city limits the tool says so explicitly. Use the centroid returned by parcel_lookup. (MVP-Maricopa note: the tool only knows Tempe; calling for a non-Tempe parcel will return "Outside City of Tempe" rather than an error.)',
+      zoningLookupSchema.shape,
+      async (args) => {
+        const record = await zoningLookup(args);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+        };
+      },
+    ),
   ],
 });
 
@@ -47,4 +59,5 @@ export const ALLOWED_TOOLS = [
   'mcp__sitesense__parcel_lookup',
   'mcp__sitesense__flood_zone',
   'mcp__sitesense__topo_slope',
+  'mcp__sitesense__zoning_lookup',
 ] as const;
