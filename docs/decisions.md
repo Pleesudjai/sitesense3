@@ -329,3 +329,34 @@ Netlify proxies `/api/*` → Render backend, so no CORS issues and backend URL s
 - `verdict` value mismatch — Claude returned `"NOT-RECOMMENDED"` (hyphen), type expects `not_recommended` (underscore). Pick one and pin in prompt.
 
 **Next:** Build tool 2 — `flood_zone` (FEMA NFHL by centroid). Then `topo_slope` (USGS 3DEP). Three tools is the threshold where cross-source reasoning becomes meaningful.
+
+---
+
+## 2026-05-08 — Agent SDK Tool 2 — flood_zone (FEMA NFHL) + cross-tool reasoning verified
+
+**What was built:** Second MCP tool in `src/agent/`. Wraps FEMA's National Flood Hazard Layer (NFHL) layer 28 ("Flood Hazard Zones"). Input is lat/lon (the centroid returned by `parcel_lookup`). Output is FEMA flood zone designation, SFHA flag, BFE, depth (for AO zones), and a plain-English risk level.
+
+**Endpoint correction (FEMA migrated):** The hackathon `netlify/functions/analyze.js` calls `https://hazards.fema.gov/gis/nfhl/...` — that path now returns 404. As of 2026-05, FEMA serves NFHL only under `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query`. The agent tool uses the new path. **The production hackathon site's flood lookup is silently broken right now** — `analyze.js` `getFloodZone()` always returns `defaultFlood()` (Zone X, fallback). Worth a follow-up fix in the hackathon code to keep the live demo honest.
+
+**Field correction:** Layer 28's BFE field is `STATIC_BFE`, not `BFE`. Hackathon code requested `BFE_DFE` which also doesn't exist on the new layer (only on a different layer). Agent uses `STATIC_BFE` and treats `-9999` (FEMA's "no BFE" sentinel) as null.
+
+**Cross-tool reasoning verified (run on APN 13209099, Tempe):**
+- Tool calls in order: `parcel_lookup({"apn":"13209099"})` → `flood_zone({"lat":33.44574, "lon":-111.91728})`
+- Surprising finding: Tempe parcel sits in **Zone X (shaded)** (between 100-yr and 500-yr floodplains, MODERATE risk) — not minimal as the agent had guessed in the single-tool run.
+- Agent reasoning across both tools:
+  - "Voluntary flood insurance is advisable" — derived from MODERATE risk + not-SFHA
+  - "Local Tempe floodplain rules may impose additional grading or elevation requirements" — inferred local-vs-federal split from X (shaded)
+  - "Flood zone X (shaded) does not impose a mandatory finished-floor elevation, but local freeboard ordinances may apply" — engineering-grade nuance
+- Verdict tightened from NOT-RECOMMENDED (implicit confidence) to NOT-RECOMMENDED with confidence=HIGH.
+- Citations now list both source URLs with timestamps.
+
+**Files added/changed:**
+- `src/agent/src/mcp/flood_zone.ts` — new tool
+- `src/agent/src/mcp/server.ts` — registers flood_zone, updated parcel_lookup description to point at flood_zone
+- `src/agent/src/prompt.ts` — added tool sequence guidance + 3 cross-tool reasoning examples
+- `src/agent/test/flood_zone.test.ts` — standalone tool test
+- `src/agent/package.json` — `test:flood` script
+
+**Next tool:** `topo_slope` (USGS 3DEP DEM). Will use the parcel boundary GeoJSON (not just centroid) so we can compute slope distribution across the lot, not just at the centerpoint.
+
+**Open follow-up:** Patch `netlify/functions/analyze.js` to use the new FEMA URL + STATIC_BFE field so the live hackathon site stops silently falling back to Zone X.

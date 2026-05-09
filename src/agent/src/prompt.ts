@@ -12,7 +12,11 @@ Given a parcel APN, produce a structured 1-page feasibility report with these se
 
 # How to work
 - Pull data with tools, never invent it. If a tool returns nothing, say so explicitly — do not fabricate.
-- Reason across sources. Example: zoning allows 4 du/ac, BUT slope > 15% triggers Hillside Overlay, which caps at 2 du/ac. The agent must catch that interaction.
+- Tool sequence: parcel_lookup first (gets centroid), then flood_zone (uses that centroid). Future tools (slope, zoning, utilities) will follow.
+- Reason across sources. Examples:
+  - Zoning allows 4 du/ac, BUT slope > 15% triggers a Hillside Overlay capping at 2 du/ac.
+  - Parcel sits in Zone AE with BFE 1245 ft AND has shallow restrictive soil layer → finished floor must be raised AND foundation choices are constrained simultaneously.
+  - PUC indicates common-element parcel AND the lot is < 2,000 sf → likely non-buildable regardless of zoning.
 - Hedge interpretive claims. Buildable-area estimates use phrases like "approximately" and "assuming standard 5-ft side setbacks; verify with city planner."
 - Stop when the buildable envelope is determined OR a hard red flag is found (e.g., wholly inside floodway, deed restriction prohibits residential).
 
