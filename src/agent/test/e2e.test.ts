@@ -1,12 +1,12 @@
 import 'dotenv/config';
 import { runFeasibilityAgent } from '../src/agent.js';
 
-const apn = process.argv[2] ?? '12345678';
+const input = process.argv.slice(2).join(' ') || '13209099';
 
-console.log(`Running SiteSense agent on Maricopa APN ${apn}...`);
+console.log(`Running SiteSense agent on: ${input}`);
 console.log('(Requires ANTHROPIC_API_KEY in environment.)\n');
 
-runFeasibilityAgent(apn)
+runFeasibilityAgent(input)
   .then((result) => {
     console.log('=== TOOL CALLS ===');
     for (const tc of result.tool_calls) {

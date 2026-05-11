@@ -1,5 +1,6 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { parcelLookup, parcelLookupSchema } from './parcel_lookup.js';
+import { addressToApn, addressToApnSchema } from './address_to_apn.js';
 import { floodZone, floodZoneSchema } from './flood_zone.js';
 import { topoSlope, topoSlopeSchema } from './topo_slope.js';
 import { zoningLookup, zoningLookupSchema } from './zoning_lookup.js';
@@ -11,10 +12,21 @@ export const sitesenseMcpServer = createSdkMcpServer({
   tools: [
     tool(
       'parcel_lookup',
-      'Look up a Maricopa County parcel by APN. Returns lot size, owner, current use code (PUC), assessor zoning code (often "CONTACT LOCAL JURISDICTION" — use zoning_lookup for the real district), address, centroid (lat/lon), and boundary GeoJSON. Throws if APN is not found. The centroid is the input for flood_zone and zoning_lookup; the boundary coordinates are used to derive the bbox for topo_slope.',
+      'Look up a Maricopa County parcel by APN. Returns lot size, owner, current use code (PUC), assessor zoning code (often "CONTACT LOCAL JURISDICTION" — use zoning_lookup for the real district), address, centroid (lat/lon), and boundary GeoJSON. Throws if APN is not found. The centroid is the input for flood_zone and zoning_lookup; the boundary coordinates are used to derive the bbox for topo_slope. If the user gave you an address instead of an APN, call address_to_apn first.',
       parcelLookupSchema.shape,
       async (args) => {
         const record = await parcelLookup(args);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+        };
+      },
+    ),
+    tool(
+      'address_to_apn',
+      'Resolve a street address to the Maricopa County parcel that contains it. Uses Nominatim (free OSM geocoder) to convert the address to lat/lon, then queries the Maricopa Parcels REST by point intersection. Returns the SAME ParcelRecord shape that parcel_lookup returns, plus a matched_address field so you can show the user what was geocoded. Throws if the address can\'t be geocoded or no Maricopa parcel intersects the point (likely outside Maricopa County or on a ROW). Use this when the user gave an address — you do NOT need to also call parcel_lookup afterward; the record returned here is complete.',
+      addressToApnSchema.shape,
+      async (args) => {
+        const record = await addressToApn(args);
         return {
           content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
         };
@@ -69,6 +81,7 @@ export const sitesenseMcpServer = createSdkMcpServer({
 
 export const ALLOWED_TOOLS = [
   'mcp__sitesense__parcel_lookup',
+  'mcp__sitesense__address_to_apn',
   'mcp__sitesense__flood_zone',
   'mcp__sitesense__topo_slope',
   'mcp__sitesense__zoning_lookup',

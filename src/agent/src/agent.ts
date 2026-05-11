@@ -10,12 +10,20 @@ export interface RunResult {
   tool_calls: Array<{ name: string; input: unknown; output: unknown }>;
 }
 
-export const runFeasibilityAgent = async (apn: string): Promise<RunResult> => {
+const looksLikeApn = (s: string): boolean =>
+  /^\d{3}-?\d{2}-?\d{3}[A-Za-z]?$/.test(s.trim()) || /^\d{8,}[A-Za-z]?$/.test(s.trim());
+
+export const runFeasibilityAgent = async (input: string): Promise<RunResult> => {
   const toolCalls: RunResult['tool_calls'] = [];
   let finalText = '';
 
+  const isApn = looksLikeApn(input);
+  const prompt = isApn
+    ? `Produce a feasibility report for Maricopa County parcel APN ${input}. Use parcel_lookup to fetch the parcel record, then flood_zone + topo_slope + zoning_lookup in parallel, then report_builder. Return only the JSON FeasibilityReport object — no markdown, no commentary.`
+    : `Produce a feasibility report for the Maricopa County parcel at this address: ${input}. Use address_to_apn to resolve the address to a parcel record (this replaces parcel_lookup for address input), then flood_zone + topo_slope + zoning_lookup in parallel, then report_builder. Return only the JSON FeasibilityReport object — no markdown, no commentary.`;
+
   const stream = query({
-    prompt: `Produce a feasibility report for Maricopa County parcel APN ${apn}. Use the parcel_lookup tool to fetch the parcel record. Return only the JSON FeasibilityReport object — no markdown, no commentary.`,
+    prompt,
     options: {
       model: 'claude-sonnet-4-6',
       systemPrompt: SITE_FEASIBILITY_SYSTEM_PROMPT,
@@ -95,12 +103,14 @@ const extractJsonReport = (text: string): FeasibilityReport | null => {
 
 const isMain = import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('agent.ts');
 if (isMain) {
-  const apn = process.argv[2];
-  if (!apn) {
-    console.error('Usage: npm run dev -- <APN>');
+  const input = process.argv.slice(2).join(' ');
+  if (!input) {
+    console.error('Usage: npm run dev -- <APN | address>');
+    console.error('  APN:     npm run dev -- 13209099');
+    console.error('  Address: npm run dev -- 1435 N Dorsey Ln, Tempe AZ 85288');
     process.exit(1);
   }
-  runFeasibilityAgent(apn).then((result) => {
+  runFeasibilityAgent(input).then((result) => {
     console.log('--- TOOL CALLS ---');
     for (const tc of result.tool_calls) {
       console.log(`${tc.name}(${JSON.stringify(tc.input)})`);

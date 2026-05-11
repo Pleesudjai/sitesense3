@@ -666,3 +666,39 @@ None of those are an "MCP-tool-fetches-via-public-REST" path.
 19 of ~21 Maricopa jurisdictions now in the agent (the remaining ~2 are tiny: Carefree, Cave Creek, Queen Creek, Wickenburg, Youngtown, Guadalupe).
 
 **Recommendation for unlocking the remaining cities:** invest in commercial zoning data (Cotality, Regrid). That bypasses the per-city-REST hunt entirely.
+
+---
+
+## 2026-05-11 — Address → APN geocoder (architecture-doc tool: input UX)
+
+**What was built:** Second input path for the agent — users can type a street address instead of an APN. New MCP tool `address_to_apn` returns the same `ParcelRecord` shape as `parcel_lookup`, so downstream tools (flood_zone, topo_slope, zoning_lookup, report_builder) don't change.
+
+**Tool internals (two-step):**
+1. **Geocode** the address via Nominatim (`nominatim.openstreetmap.org/search`) — free, no auth, requires User-Agent header (we identify as `SiteSenseAgent/0.1`).
+2. **Resolve to parcel** by querying Maricopa Parcels REST at the resulting lat/lon with `geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects`. Returns the full `ParcelRecord` plus a `matched_address` field showing what Nominatim actually matched.
+
+**Failure modes handled:**
+- Nominatim can't geocode → "Nominatim could not geocode address: …" with the raw input.
+- No parcel at the geocoded point → "address may be outside Maricopa County, or on a right-of-way / open space" so the user knows the problem isn't agent failure.
+
+**Agent input routing:**
+- `runFeasibilityAgent(input)` classifies via `looksLikeApn(s)` regex (`\d{3}-?\d{2}-?\d{3}[A-Za-z]?` or 8+ digits with optional letter suffix).
+- Prompts the agent with the right opening: APN → "use parcel_lookup", address → "use address_to_apn".
+- System prompt updated to describe both paths and tell the agent address_to_apn returns a complete ParcelRecord (no need to also call parcel_lookup afterward).
+
+**Verified:**
+- Standalone tool (no Claude needed): `"1435 N Dorsey Ln, Tempe AZ 85288"` → APN 13209099 (the condo we used earlier); `"2092 E 10th St, Tempe AZ 85281"` → APN 13268011 (the SFR).
+- Full e2e: address input → agent called `address_to_apn` first, then `flood_zone` + `topo_slope` + `zoning_lookup(city=TEMPE)` in parallel. No `parcel_lookup` call — agent correctly recognized the ParcelRecord was already complete.
+
+**Files:**
+- `src/agent/src/mcp/address_to_apn.ts` — new tool
+- `src/agent/src/mcp/server.ts` — registers address_to_apn, updated parcel_lookup description to point at it
+- `src/agent/src/agent.ts` — input classification + dispatching prompt
+- `src/agent/src/prompt.ts` — describes both input paths in the tool sequence
+- `src/agent/test/address_to_apn.test.ts` — standalone test
+- `src/agent/test/e2e.test.ts` — accepts address as well as APN
+- `src/agent/package.json` — `test:address` script
+
+**MVP UX shift:** the demo is now "type your address, get a 1-page feasibility report" instead of "type your APN". Same agent, same 5 downstream tools, no extra latency (parcel data still fetched in 1 call, just from a different source).
+
+**Architecture-doc tools now covered:** parcel_lookup, flood_zone, topo_slope, zoning_lookup, report_builder, **+ address_to_apn (input UX tool, not in original 8-tool list but obvious need).** Remaining: utility_avail, title_pull, comps_cost.
