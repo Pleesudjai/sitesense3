@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/agent.ts",
+    "serve": "tsx src/server.ts",
     "test:parcel": "tsx test/parcel_lookup.test.ts",
     "test:address": "tsx test/address_to_apn.test.ts",
     "test:flood": "tsx test/flood_zone.test.ts",

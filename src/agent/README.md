@@ -41,7 +41,42 @@ npm run test:e2e -- 12345678
 CLI:
 ```bash
 npm run dev -- 12345678
+npm run dev -- "1435 N Dorsey Ln, Tempe AZ 85288"
 ```
+
+## HTTP server
+
+Standalone HTTP server exposing the agent as an API:
+
+```bash
+npm run serve
+```
+
+Listens on `http://localhost:3001` by default (override via `PORT` env var).
+
+Endpoints:
+- `GET  /healthz` — liveness check
+- `POST /api/feasibility` — body `{ "input": "<APN or address>" }` returns `{ report, raw_text, tool_calls, elapsed_ms }`
+
+CORS allows any origin by default (override via `ALLOWED_ORIGIN` env var).
+
+Test:
+```bash
+curl http://localhost:3001/healthz
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"input":"2092 E 10th St, Tempe AZ 85281"}' \
+  http://localhost:3001/api/feasibility
+```
+
+## Deployment
+
+The agent is intentionally **not** a Netlify Function — the Agent SDK is heavy and the loop runs longer than the Netlify Pro 26-second sync timeout. Deploy as a standalone Node service:
+
+- **Render**: `Build cmd: cd src/agent && npm install` / `Start cmd: cd src/agent && npm run serve`. Free tier works for low traffic; spin-down on idle.
+- **Fly.io / Railway**: same pattern, longer cold-start budgets.
+- **AWS Lambda (with extended timeout)**: containerized.
+
+The hackathon React frontend at `src/frontend/src/api.js` already has a `runFeasibilityAgent(input)` client that POSTs to `VITE_AGENT_URL/api/feasibility` (defaults to `http://localhost:3001`).
 
 ## Endpoint to verify
 

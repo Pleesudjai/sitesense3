@@ -736,3 +736,51 @@ The "likely well water" / "likely septic" classification is itself an engineerin
 - `src/agent/package.json` — test:utility script
 
 **Architecture-doc status:** 6 of 8 tools done. Remaining: title_pull (paid API, decision deferred), comps_cost (MLS/RSMeans).
+
+---
+
+## 2026-05-11 — HTTP layer: standalone Node server + frontend client
+
+**What was built:** A minimal HTTP server (`src/agent/src/server.ts`) using Node's built-in `http` module — no Express dependency. Exposes the agent at `POST /api/feasibility` with `GET /healthz` for liveness. The hackathon React frontend's `api.js` now has a `runFeasibilityAgent(input)` client that POSTs to it (default `http://localhost:3001`, overridable via `VITE_AGENT_URL`).
+
+**Why NOT a Netlify Function:**
+- The Agent SDK bundles to ~10+ MB; together with `marked`, `zod`, `dotenv`, etc., approaches Netlify's 50 MB function size limit.
+- A typical agent loop runs 30–60 seconds (5 tool calls + Claude reasoning passes), which exceeds Netlify's 26-second Pro tier sync timeout.
+- Netlify Functions are also bundled by esbuild, which would need to walk into `src/agent/node_modules` and re-bundle the SDK every deploy.
+- The architecture doc explicitly says **"Node.js + Express/Fastify"** for the backend — a standalone process is the right shape for a long-running agent.
+
+**Server design (intentionally tiny):**
+- No Express. Native `http.createServer`.
+- One endpoint that matters: `POST /api/feasibility` with `{ "input": "<APN or address>" }`.
+- CORS open by default (override via `ALLOWED_ORIGIN`).
+- Wraps the existing `runFeasibilityAgent` from `src/agent/src/agent.ts` — zero duplication.
+- Reports elapsed_ms in the response so the frontend can show progress to the user.
+- Errors caught and surfaced as `{ error, detail }` with appropriate HTTP status.
+
+**Verified locally:**
+- `GET /healthz` → 200 `{"status":"ok","service":"sitesense-agent"}`
+- `POST /api/feasibility {input:""}` → 400 with helpful error
+- `POST /nonexistent` → 404
+- (Full agent run via the endpoint not re-tested to save API quota; the agent itself is verified.)
+
+**Deployment guidance (in README):**
+- **Render**: `Build cmd: cd src/agent && npm install` / `Start cmd: cd src/agent && npm run serve`. Free tier OK for low traffic; spin-down on idle.
+- **Fly.io / Railway**: same pattern, longer cold-start budgets.
+- **AWS Lambda with extended timeout**: containerized.
+
+**Files:**
+- `src/agent/src/server.ts` — new HTTP server (~80 lines)
+- `src/agent/package.json` — `serve` script
+- `src/agent/README.md` — server + deployment docs
+- `src/frontend/src/api.js` — `runFeasibilityAgent(input)` client function
+
+**Demo loop closed:**
+- CLI: `npm run dev -- 13209099` or `npm run dev -- "1435 N Dorsey Ln, Tempe AZ"`
+- HTTP: `npm run serve` then curl/fetch `POST /api/feasibility`
+- Frontend: existing React app's `api.js` can call the agent once a UI tab is added (next session — small step, prototyped pattern already in place).
+
+**Open follow-ups:**
+- React UI tab for the feasibility agent (frontend integration). Estimate: ~30 min.
+- Push 14 commits to GitHub.
+- Patch dead FEMA URL in hackathon `analyze.js`.
+- Tools 6 & 7: `title_pull` (paid API), `comps_cost`.

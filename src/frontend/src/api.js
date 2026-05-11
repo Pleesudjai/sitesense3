@@ -450,3 +450,24 @@ export async function askEngineering(question, context = null) {
   }
   return response.json()
 }
+
+// SiteSense Agent (YC-track backend, src/agent/).
+// The agent is a separate Node service — not a Netlify Function — because the
+// Agent SDK is heavy and runs longer than the Netlify Pro 26 s sync timeout.
+// Default points at localhost:3001 (`npm run serve` in src/agent/);
+// override via VITE_AGENT_URL for production deploys (Render, Fly, etc.).
+const AGENT_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AGENT_URL)
+  || 'http://localhost:3001'
+
+export async function runFeasibilityAgent(input) {
+  const response = await fetch(`${AGENT_URL}/api/feasibility`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.detail || err.error || `Agent failed: ${response.status}`)
+  }
+  return response.json()
+}
