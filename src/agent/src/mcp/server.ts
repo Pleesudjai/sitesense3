@@ -4,6 +4,7 @@ import { addressToApn, addressToApnSchema } from './address_to_apn.js';
 import { floodZone, floodZoneSchema } from './flood_zone.js';
 import { topoSlope, topoSlopeSchema } from './topo_slope.js';
 import { zoningLookup, zoningLookupSchema } from './zoning_lookup.js';
+import { utilityAvail, utilityAvailSchema } from './utility_avail.js';
 import { reportBuilder, reportBuilderSchema } from './report_builder.js';
 
 export const sitesenseMcpServer = createSdkMcpServer({
@@ -66,6 +67,17 @@ export const sitesenseMcpServer = createSdkMcpServer({
       },
     ),
     tool(
+      'utility_avail',
+      'Look up electric, water, and sewer service for a point (lat/lon). Queries 5 sources in parallel: SRP electric service area, APS CCN territory, Maricopa County water provider layer, Maricopa County sewer provider layer, ADWR Municipal Service Area. Returns structured electric/water/sewer records with a likely_provider per service and a verification note. Pass parcel_lookup PHYSICAL_CITY as the optional `city` hint so unincorporated-coverage gaps fall back to a city-default provider (e.g., Tempe water defaults to City of Tempe Water Utilities when ADWR is silent). For unincorporated rural parcels with no provider hits, the tool surfaces "likely well water" and "likely septic" — which are themselves engineering-grade signals.',
+      utilityAvailSchema.shape,
+      async (args) => {
+        const record = await utilityAvail(args);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(record, null, 2) }],
+        };
+      },
+    ),
+    tool(
       'report_builder',
       'Render the final 1-page feasibility report to a styled HTML file on disk. Call this AFTER all data tools have been called and the verdict is decided. Input is structured: apn, address, verdict (one of buildable / proceed_with_caution / not_recommended), verdict_one_liner (one-sentence summary), sections (array of {heading, body_md} — Markdown body), and citations. The tool writes a print-ready HTML file (8.5×11", 0.6" margins, color-coded verdict banner, citations footer, disclaimer) and returns the path. Recommended sections in order: Parcel Summary, Zoning Envelope, Constraints, Buildable Area, Red Flags, Recommendation. Keep section bodies tight — this is a single page.',
       reportBuilderSchema.shape,
@@ -85,5 +97,6 @@ export const ALLOWED_TOOLS = [
   'mcp__sitesense__flood_zone',
   'mcp__sitesense__topo_slope',
   'mcp__sitesense__zoning_lookup',
+  'mcp__sitesense__utility_avail',
   'mcp__sitesense__report_builder',
 ] as const;

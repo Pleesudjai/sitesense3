@@ -702,3 +702,37 @@ None of those are an "MCP-tool-fetches-via-public-REST" path.
 **MVP UX shift:** the demo is now "type your address, get a 1-page feasibility report" instead of "type your APN". Same agent, same 5 downstream tools, no extra latency (parcel data still fetched in 1 call, just from a different source).
 
 **Architecture-doc tools now covered:** parcel_lookup, flood_zone, topo_slope, zoning_lookup, report_builder, **+ address_to_apn (input UX tool, not in original 8-tool list but obvious need).** Remaining: utility_avail, title_pull, comps_cost.
+
+---
+
+## 2026-05-11 — utility_avail MCP tool (architecture-doc tool 5)
+
+**What was built:** Tool 5 from the architecture-doc list. Queries 5 utility data sources in parallel at a point and returns structured electric/water/sewer service records with inferred providers and verification notes.
+
+**Endpoints:**
+- **SRP electric**: `services2.arcgis.com/ICaY8VX3lsUsMBRl/.../SRP_PSA/FeatureServer/3` (owner=Matthew.Russo_SRP_GIS, official). The service description carries a strict ToS: "no display of this boundary is permitted without SRP written consent." We use it ONLY for binary in/out classification, never redistribute the polygon. The report says "SRP service area" (a public fact), not the boundary data.
+- **APS electric**: `services6.arcgis.com/wF9gckwE55J0Ayag/.../CCN_ServiceTerritory/FeatureServer/0` (owner=rami.alygad_apsc, official). The layer covers all of AZ; features inside APS territory have non-null `NAME`. We treat NAME=null as "not APS."
+- **Maricopa County Water Provider**: PND/PlanNet layer 48. Sparse — only covers unincorporated parcels. Returns LABEL field (e.g., "EPCOR Water Arizona, Inc. (Anthem)").
+- **Maricopa County Sewer Provider**: PND/PlanNet layer 50. Same shape as water — only unincorporated.
+- **ADWR Municipal Service Area**: PND/PlanNet layer 49. Authoritative across the county. Returns WATERCO field (e.g., "CITY OF TEMPE", "ANTHEM").
+
+**Provider inference logic:**
+- Electric: SRP query result → APS query result → city default. SRP_CITIES={Tempe, Mesa, Chandler, Gilbert, Scottsdale}, APS_DOMINANT_CITIES={Phoenix, Goodyear, Avondale, Surprise, Peoria, Buckeye, Glendale}. Returns "SRP or APS (both overlap)" when both match.
+- Water: ADWR WATERCO → County provider → city default → "likely well water" for unincorporated parcels with no provider hits.
+- Sewer: County provider → city default → "likely on-site septic" for rural.
+
+The "likely well water" / "likely septic" classification is itself an engineering signal — it means a major site-cost driver. The prompt now tells the agent to flag this in red flags with "$20–40K typical for well + septic."
+
+**Verified on 3 site types:**
+- Tempe APN 13209099 (in-city, SRP territory): electric=SRP, water=City of Tempe (ADWR), sewer=City of Tempe Wastewater (city default fallback).
+- Phoenix Encanto (in-city, APS territory): electric=Likely APS (APS query returned NAME=null so fell to city default), water=City of Phoenix (ADWR), sewer=City of Phoenix Water Services Department (city default).
+- New River (rural unincorporated): electric=unknown (no SRP, no APS, no city hint), water=ANTHEM via ADWR and County (EPCOR Water Arizona at the Anthem master-planned community), sewer=EPCOR (county). Matches reality.
+
+**Files:**
+- `src/agent/src/mcp/utility_avail.ts` — new tool (Promise.allSettled across 5 endpoints, inference logic, ToS-respectful SRP usage)
+- `src/agent/src/mcp/server.ts` — registers utility_avail
+- `src/agent/src/prompt.ts` — adds utility_avail to the parallel call set + "flag well+septic in red flags with $20-40K cost"
+- `src/agent/test/utility_avail.test.ts` — standalone test
+- `src/agent/package.json` — test:utility script
+
+**Architecture-doc status:** 6 of 8 tools done. Remaining: title_pull (paid API, decision deferred), comps_cost (MLS/RSMeans).

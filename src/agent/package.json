@@ -11,6 +11,7 @@
     "test:flood": "tsx test/flood_zone.test.ts",
     "test:slope": "tsx test/topo_slope.test.ts",
     "test:zoning": "tsx test/zoning_lookup.test.ts",
+    "test:utility": "tsx test/utility_avail.test.ts",
     "test:report": "tsx test/report_builder.test.ts",
     "test:e2e": "tsx test/e2e.test.ts",
     "typecheck": "tsc --noEmit"
