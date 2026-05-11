@@ -6,6 +6,13 @@ import { mesa } from './zoning/mesa.js';
 import { scottsdale } from './zoning/scottsdale.js';
 import { gilbert } from './zoning/gilbert.js';
 import { chandler, chandlerStub } from './zoning/chandler.js';
+import { glendale } from './zoning/glendale.js';
+import {
+  goodyear, goodyearStub,
+  avondale, avondaleStub,
+  surprise, surpriseStub,
+  peoria, peoriaStub,
+} from './zoning/stubs_west_valley.js';
 import { maricopaCounty } from './zoning/maricopa_county.js';
 
 export const zoningLookupSchema = z.object({
@@ -21,16 +28,21 @@ export const zoningLookupSchema = z.object({
 
 export type ZoningLookupInput = z.infer<typeof zoningLookupSchema>;
 
-// Order matters for the parallel scan: city-level modules first (most authoritative
-// for their territory), Chandler before County (Chandler is inside Maricopa but its
-// boundaries override), Maricopa County last as the unincorporated fallback.
+// Order matters for the parallel scan: real-data city modules first (most
+// authoritative for their territory), hint-only stubs are no-ops in the scan,
+// Maricopa County last as the unincorporated fallback.
 const MODULES: CityModule[] = [
   tempe,
   phoenix,
   mesa,
   scottsdale,
   gilbert,
-  chandler,
+  glendale,
+  chandler, // no-op in scan
+  goodyear, // no-op in scan
+  avondale, // no-op in scan
+  surprise, // no-op in scan
+  peoria, // no-op in scan
   maricopaCounty,
 ];
 
@@ -40,7 +52,22 @@ const CITY_INDEX: Record<string, CityModule> = {
   MESA: mesa,
   SCOTTSDALE: scottsdale,
   GILBERT: gilbert,
+  GLENDALE: glendale,
   CHANDLER: chandler,
+  GOODYEAR: goodyear,
+  AVONDALE: avondale,
+  SURPRISE: surprise,
+  PEORIA: peoria,
+};
+
+// Stubs that bypass the parallel scan and return a "no-public-REST" record
+// directly when the agent passes their city as a hint.
+const STUB_BY_HINT: Record<string, Omit<typeof chandlerStub, 'fetched_at'>> = {
+  CHANDLER: chandlerStub,
+  GOODYEAR: goodyearStub,
+  AVONDALE: avondaleStub,
+  SURPRISE: surpriseStub,
+  PEORIA: peoriaStub,
 };
 
 export type ZoningLookupRecord = ZoningResult & {
@@ -55,12 +82,12 @@ export const zoningLookup = async (
   // Hint dispatch — try the specified city first.
   if (input.city) {
     const hint = input.city.trim().toUpperCase();
-    // Special case: Chandler has no public zoning REST. When the hint is CHANDLER
-    // we return the stub directly with the current timestamp.
-    if (hint === 'CHANDLER') {
-      tried.push('Chandler');
+    // Cities with no public zoning REST: return the stub directly via the hint.
+    const stub = STUB_BY_HINT[hint];
+    if (stub) {
+      tried.push(stub.jurisdiction);
       return {
-        ...chandlerStub,
+        ...stub,
         fetched_at: new Date().toISOString(),
         cities_tried: tried,
       };
@@ -107,7 +134,7 @@ export const zoningLookup = async (
     detached_dwelling_allowed: null,
     ordinance_reference: 'N/A',
     confidence: 'unknown',
-    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered city's zoning layer or Maricopa County unincorporated. Likely a Maricopa city not yet in the agent (Goodyear, Avondale, Surprise, Peoria, Buckeye, Glendale, Apache Junction, etc.) or outside Maricopa County entirely.`,
+    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered jurisdiction (Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale with full data; Chandler, Goodyear, Avondale, Surprise, Peoria via hint-only stubs; Maricopa County unincorporated as fallback). Likely a Maricopa city not yet in the agent (Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley, etc.) or outside Maricopa County entirely.`,
     source_url: 'N/A',
     fetched_at: fetchedAt,
     cities_tried: tried,

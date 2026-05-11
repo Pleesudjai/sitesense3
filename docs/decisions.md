@@ -566,3 +566,57 @@ That's 7 of ~14 Maricopa jurisdictions; covers the bulk of the population and th
 - Push 8+ commits to GitHub.
 - Patch hackathon FEMA URL.
 - Wire agent to HTTP endpoint.
+
+---
+
+## 2026-05-11 — zoning_lookup: Glendale (real data) + 4 west-valley hint-only stubs → 12 jurisdictions
+
+**What was built:** Closed most of the remaining Maricopa-wide coverage gap. One new module with real data + 4 hint-only stubs sharing a reusable factory.
+
+**Glendale (real data):** Official GisAdmin_COG service on AGOL. Endpoint: `services1.arcgis.com/9fVTQQSiODPjLUTa/.../Glendale_Zoning/FeatureServer/0`. Field: `BASE_ZONE` (the canonical code), with `ZONING` (descriptive) and `OVERLAY` (district-specific overlay) as secondary fields. 23 dimensional entries encoded covering A-1 / RR-45 / SR-12/17/30 / R1-4/6/7/8/10 / R-2/3/4/5 / R-O / C-1/2/3 / C-O / BP / M-1/2 / PAD / PR. Overlay value surfaced in the note when present.
+
+**Hint-only stubs (Chandler pattern, factored out):**
+- New `zoning/stub.ts` — `buildStubRecord(cityName, planningUrl, planningPhone, zoningChapter)` + `buildStubModule(cityName)` factory. Eliminates per-city boilerplate.
+- New `zoning/stubs_west_valley.ts` — Goodyear, Avondale, Surprise, Peoria stubs (~5 lines each calling the factory) with their actual planning department URLs and phone numbers.
+- `zoning/chandler.ts` — refactored to use the same factory (15 lines, was 35).
+
+Why stubs for these four:
+- **Goodyear**: `maps.goodyearaz.gov` returns 404; no AGOL zoning service found.
+- **Avondale**: `gis.avondaleaz.gov` returns 522 (origin unreachable); no AGOL service.
+- **Surprise**: DNS resolution failure; no AGOL service.
+- **Peoria**: has `gis.peoriaaz.gov/.../Peoria_Zoning/MapServer`, but its 19 layers cover specific area plans and Subzones (PAD/PCD/PUD overlay categories only) — no base-zoning REST.
+
+Each stub returns the same `ZoningResult` shape with confidence='unknown' and a note pointing the user to that city's planning portal + phone. Honest disclosure, not fabrication.
+
+**Dispatcher upgrade:**
+- `CITY_INDEX` now lists 11 city keys.
+- `STUB_BY_HINT` map dispatches 5 cities (Chandler + 4 west valley) directly when their hint comes in — no GIS call, no parallel scan, just the stub record with a fresh timestamp.
+- `MODULES` parallel-scan list still has the stubs as no-op modules (they return null in the scan, so they neither match falsely nor block real cities).
+- "Outside covered jurisdictions" fallback message now enumerates all 12 covered jurisdictions + the seven most likely Maricopa cities still missing.
+
+**Coverage as of this commit:**
+| Jurisdiction | Status |
+|---|---|
+| Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale, Maricopa Co. unincorporated | Full dimensional data (7) |
+| Chandler, Goodyear, Avondale, Surprise, Peoria | Hint-only stubs (5) |
+| Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley | Not in agent |
+
+**Verified dispatch:**
+- Glendale downtown (33.5387, -112.1859) → C-2 Intermediate Commercial (real data, low confidence)
+- Goodyear via hint (33.4355, -112.3576) → stub with chandleraz.gov-style "consult planning" note
+- Peoria via hint (33.5806, -112.2374) → stub with peoriaaz.gov pointer
+
+**Files added/changed:**
+- `src/agent/src/mcp/zoning/stub.ts` — factory for hint-only modules
+- `src/agent/src/mcp/zoning/stubs_west_valley.ts` — Goodyear/Avondale/Surprise/Peoria stubs
+- `src/agent/src/mcp/zoning/glendale.ts` — full Glendale module
+- `src/agent/src/mcp/zoning/chandler.ts` — refactored to use the factory
+- `src/agent/src/mcp/zoning_lookup.ts` — STUB_BY_HINT map, expanded MODULES
+- `src/agent/src/mcp/server.ts`, `src/agent/src/prompt.ts` — tool/prompt descriptions
+
+**Open follow-ups:**
+- Remaining seven Maricopa cities (Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley) — each is ~1 day to find/encode.
+- Chandler/Peoria base-zoning data — would require scraping PDFs or contacting city GIS.
+- Push 10 commits to GitHub.
+- Address → APN geocoder.
+- HTTP layer for the React frontend.
