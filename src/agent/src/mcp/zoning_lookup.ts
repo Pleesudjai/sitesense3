@@ -5,6 +5,8 @@ import { phoenix } from './zoning/phoenix.js';
 import { mesa } from './zoning/mesa.js';
 import { scottsdale } from './zoning/scottsdale.js';
 import { gilbert } from './zoning/gilbert.js';
+import { chandler, chandlerStub } from './zoning/chandler.js';
+import { maricopaCounty } from './zoning/maricopa_county.js';
 
 export const zoningLookupSchema = z.object({
   lat: z.number().min(-90).max(90).describe('Latitude in WGS84 decimal degrees.'),
@@ -13,13 +15,24 @@ export const zoningLookupSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Optional jurisdiction hint from parcel_lookup PHYSICAL_CITY (e.g., "TEMPE", "PHOENIX", "MESA", "SCOTTSDALE", "GILBERT"). When provided, the dispatcher tries that city first; if absent or no match, all cities are queried in parallel and the first hit wins.',
+      'Optional jurisdiction hint from parcel_lookup PHYSICAL_CITY (e.g., "TEMPE", "PHOENIX", "MESA", "SCOTTSDALE", "GILBERT", "CHANDLER"). When provided, the dispatcher tries that city first; if absent or no match, all cities + Maricopa County unincorporated are queried in parallel and the first hit wins.',
     ),
 });
 
 export type ZoningLookupInput = z.infer<typeof zoningLookupSchema>;
 
-const MODULES: CityModule[] = [tempe, phoenix, mesa, scottsdale, gilbert];
+// Order matters for the parallel scan: city-level modules first (most authoritative
+// for their territory), Chandler before County (Chandler is inside Maricopa but its
+// boundaries override), Maricopa County last as the unincorporated fallback.
+const MODULES: CityModule[] = [
+  tempe,
+  phoenix,
+  mesa,
+  scottsdale,
+  gilbert,
+  chandler,
+  maricopaCounty,
+];
 
 const CITY_INDEX: Record<string, CityModule> = {
   TEMPE: tempe,
@@ -27,6 +40,7 @@ const CITY_INDEX: Record<string, CityModule> = {
   MESA: mesa,
   SCOTTSDALE: scottsdale,
   GILBERT: gilbert,
+  CHANDLER: chandler,
 };
 
 export type ZoningLookupRecord = ZoningResult & {
@@ -40,7 +54,18 @@ export const zoningLookup = async (
 
   // Hint dispatch — try the specified city first.
   if (input.city) {
-    const hinted = CITY_INDEX[input.city.trim().toUpperCase()];
+    const hint = input.city.trim().toUpperCase();
+    // Special case: Chandler has no public zoning REST. When the hint is CHANDLER
+    // we return the stub directly with the current timestamp.
+    if (hint === 'CHANDLER') {
+      tried.push('Chandler');
+      return {
+        ...chandlerStub,
+        fetched_at: new Date().toISOString(),
+        cities_tried: tried,
+      };
+    }
+    const hinted = CITY_INDEX[hint];
     if (hinted) {
       tried.push(hinted.name);
       try {
@@ -82,7 +107,7 @@ export const zoningLookup = async (
     detached_dwelling_allowed: null,
     ordinance_reference: 'N/A',
     confidence: 'unknown',
-    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered city's zoning layer. Likely Maricopa County unincorporated or a city not yet in the agent (Chandler, Goodyear, Avondale, Surprise, Peoria, etc.).`,
+    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered city's zoning layer or Maricopa County unincorporated. Likely a Maricopa city not yet in the agent (Goodyear, Avondale, Surprise, Peoria, Buckeye, Glendale, Apache Junction, etc.) or outside Maricopa County entirely.`,
     source_url: 'N/A',
     fetched_at: fetchedAt,
     cities_tried: tried,

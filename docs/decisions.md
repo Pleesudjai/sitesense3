@@ -526,3 +526,43 @@ src/agent/src/mcp/
 The pattern is set: adding Chandler / Goodyear / Avondale / etc. is now ~80 lines of dimensional table per city. The unglamorous half of the moat is the slog of these tables; the dispatcher pattern makes the slog mechanical.
 
 **Next next:** Chandler module (different schema), Maricopa County unincorporated, then utility_avail / title_pull / comps_cost, then the HTTP/frontend layer.
+
+---
+
+## 2026-05-11 — zoning_lookup: Chandler + Maricopa County unincorporated → 7 jurisdictions
+
+**What was built:** Closed the Maricopa-wide zoning coverage gap. Two new modules in `src/agent/src/mcp/zoning/`:
+
+1. **`maricopa_county.ts`** — Maricopa County unincorporated, via PND/PlanNet layer 11 (`gis.maricopa.gov/arcgis/rest/services/PND/PlanNet/MapServer/11`). Field `ZONE`; `JURIS='COUNTY'` everywhere (the layer is unincorporated-only — 10,147 features). Dimensional table covers the actual code system seen in the data (probed via outStatistics groupBy on `ZONE`): RU-43, RU-70, RU-190 (rural use, increasing lot size), R1-6 through R1-35, R-2 through R-5, C-1/2/3, C-O, C-S, IND-1/2/3, AD-1/2/3 (airport districts). 23 codes encoded with medium-low confidence.
+
+2. **`chandler.ts`** — Chandler is a special case. The city exposes only a sparse historical-amendment layer (`Chandler_Ordinances_Public_View` — 241 features, old code system) plus a `Chandler_CityLimits` layer that has only 1 feature with a tiny extent (effectively broken). There is no public continuous current-zoning REST. The module is now hint-only: when the agent passes `city='CHANDLER'` (from parcel_lookup PHYSICAL_CITY), the dispatcher returns a stub record with `jurisdiction='Chandler'`, `confidence='unknown'`, and an explicit note pointing the user to chandleraz.gov/zoning + (480) 782-3000. In the parallel scan (no city hint) the Chandler module returns null so it doesn't false-match other jurisdictions.
+
+**Dispatcher upgrade:**
+- `CITY_INDEX` extended with `CHANDLER`.
+- Hint path now special-cases `CHANDLER` to return the stub directly with a fresh timestamp (no boundary check, no false-negatives from the broken city-limits layer).
+- Parallel scan order: city modules first (more authoritative for their territory), then Chandler (no-op now), then Maricopa County unincorporated last as the rural fallback.
+- The "Outside covered jurisdictions" final fallback now lists 7 jurisdictions tried and points the user to the remaining Maricopa cities not yet covered (Goodyear, Avondale, Surprise, Peoria, Glendale, Buckeye, Apache Junction).
+
+**Verified dispatch (7 jurisdictions in the system, 6 with real data):**
+- Tempe APN 13209099 → R1-4 (medium)
+- Phoenix Encanto → R1-6 (medium)
+- East Mesa → RS-6 (medium)
+- Scottsdale Old Town → D/RS-1 DO (low — overlay code, graceful degradation)
+- Gilbert Heritage Village → HVC (low — heritage district)
+- Chandler (with hint) → stub with "consult chandleraz.gov/zoning" note (unknown confidence)
+- New River unincorporated (33.85, -112.13) → R1-7 (medium)
+
+**Where Maricopa-MVP zoning stands now:**
+- ✓ Tempe, Phoenix, Mesa, Scottsdale, Gilbert — full dimensional tables
+- ⚠ Chandler — boundary-detect only (data source gap, not code gap)
+- ✓ Maricopa County unincorporated — full dimensional table
+- ✗ Goodyear, Avondale, Surprise, Peoria, Glendale, Buckeye, Apache Junction — not in agent, returns "Outside covered" with cities_tried
+
+That's 7 of ~14 Maricopa jurisdictions; covers the bulk of the population and the dispatcher pattern makes each remaining city ~80 lines of dimensional table.
+
+**Open follow-ups for next session:**
+- Chandler data source — would need to email Chandler IT or scrape the Chandler zoning code PDF. Defer.
+- Add remaining cities (Goodyear, Avondale, Surprise, Peoria, Glendale) — mechanical.
+- Push 8+ commits to GitHub.
+- Patch hackathon FEMA URL.
+- Wire agent to HTTP endpoint.
