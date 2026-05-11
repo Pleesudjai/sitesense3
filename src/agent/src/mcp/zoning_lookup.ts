@@ -12,6 +12,13 @@ import {
   avondale, avondaleStub,
   surprise, surpriseStub,
   peoria, peoriaStub,
+  buckeye, buckeyeStub,
+  apacheJunction, apacheJunctionStub,
+  elMirage, elMirageStub,
+  tolleson, tollesonStub,
+  fountainHills, fountainHillsStub,
+  litchfieldPark, litchfieldParkStub,
+  paradiseValley, paradiseValleyStub,
 } from './zoning/stubs_west_valley.js';
 import { maricopaCounty } from './zoning/maricopa_county.js';
 
@@ -38,11 +45,20 @@ const MODULES: CityModule[] = [
   scottsdale,
   gilbert,
   glendale,
-  chandler, // no-op in scan
-  goodyear, // no-op in scan
-  avondale, // no-op in scan
-  surprise, // no-op in scan
-  peoria, // no-op in scan
+  // hint-only stubs — return null in the parallel scan
+  chandler,
+  goodyear,
+  avondale,
+  surprise,
+  peoria,
+  buckeye,
+  apacheJunction,
+  elMirage,
+  tolleson,
+  fountainHills,
+  litchfieldPark,
+  paradiseValley,
+  // fallback
   maricopaCounty,
 ];
 
@@ -53,11 +69,18 @@ const CITY_INDEX: Record<string, CityModule> = {
   SCOTTSDALE: scottsdale,
   GILBERT: gilbert,
   GLENDALE: glendale,
+  AVONDALE: avondale,
   CHANDLER: chandler,
   GOODYEAR: goodyear,
-  AVONDALE: avondale,
   SURPRISE: surprise,
   PEORIA: peoria,
+  BUCKEYE: buckeye,
+  'APACHE JUNCTION': apacheJunction,
+  'EL MIRAGE': elMirage,
+  TOLLESON: tolleson,
+  'FOUNTAIN HILLS': fountainHills,
+  'LITCHFIELD PARK': litchfieldPark,
+  'PARADISE VALLEY': paradiseValley,
 };
 
 // Stubs that bypass the parallel scan and return a "no-public-REST" record
@@ -68,6 +91,13 @@ const STUB_BY_HINT: Record<string, Omit<typeof chandlerStub, 'fetched_at'>> = {
   AVONDALE: avondaleStub,
   SURPRISE: surpriseStub,
   PEORIA: peoriaStub,
+  BUCKEYE: buckeyeStub,
+  'APACHE JUNCTION': apacheJunctionStub,
+  'EL MIRAGE': elMirageStub,
+  TOLLESON: tollesonStub,
+  'FOUNTAIN HILLS': fountainHillsStub,
+  'LITCHFIELD PARK': litchfieldParkStub,
+  'PARADISE VALLEY': paradiseValleyStub,
 };
 
 export type ZoningLookupRecord = ZoningResult & {
@@ -134,7 +164,7 @@ export const zoningLookup = async (
     detached_dwelling_allowed: null,
     ordinance_reference: 'N/A',
     confidence: 'unknown',
-    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered jurisdiction (Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale with full data; Chandler, Goodyear, Avondale, Surprise, Peoria via hint-only stubs; Maricopa County unincorporated as fallback). Likely a Maricopa city not yet in the agent (Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley, etc.) or outside Maricopa County entirely.`,
+    note: `Tried: ${tried.join(', ')}. Point did not intersect any covered jurisdiction (full-data: Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale, Maricopa County unincorporated; hint-only stubs: Chandler, Goodyear, Avondale, Surprise, Peoria, Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley). Likely outside Maricopa County entirely.`,
     source_url: 'N/A',
     fetched_at: fetchedAt,
     cities_tried: tried,

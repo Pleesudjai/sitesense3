@@ -36,3 +36,59 @@ export const peoriaStub = buildStubRecord(
   'Peoria Zoning Ordinance Chapter 14',
 );
 export const peoria = buildStubModule('Peoria');
+
+export const buckeyeStub = buildStubRecord(
+  'Buckeye',
+  'https://www.buckeyeaz.gov/government/departments/development-services',
+  '(623) 349-6700',
+  'Buckeye Zoning Ordinance',
+);
+export const buckeye = buildStubModule('Buckeye');
+
+export const apacheJunctionStub = buildStubRecord(
+  'Apache Junction',
+  'https://www.apachejunctionaz.gov/government/departments/development_services',
+  '(480) 474-5083',
+  'Apache Junction Zoning Code Title 11',
+);
+export const apacheJunction = buildStubModule('Apache Junction');
+
+export const elMirageStub = buildStubRecord(
+  'El Mirage',
+  'https://www.cityofelmirage.org/government/departments/community-development',
+  '(623) 935-2629',
+  'El Mirage Land Development Code',
+);
+export const elMirage = buildStubModule('El Mirage');
+
+export const tollesonStub = buildStubRecord(
+  'Tolleson',
+  'https://www.tollesonaz.org/community-development',
+  '(623) 936-2782',
+  'Tolleson Zoning Ordinance',
+);
+export const tolleson = buildStubModule('Tolleson');
+
+export const fountainHillsStub = buildStubRecord(
+  'Fountain Hills',
+  'https://www.fountainhillsaz.gov/162/Development-Services',
+  '(480) 816-5100',
+  'Fountain Hills Zoning Ordinance',
+);
+export const fountainHills = buildStubModule('Fountain Hills');
+
+export const litchfieldParkStub = buildStubRecord(
+  'Litchfield Park',
+  'https://www.litchfield-park.org/162/Planning-Zoning',
+  '(623) 935-5033',
+  'Litchfield Park Zoning Ordinance',
+);
+export const litchfieldPark = buildStubModule('Litchfield Park');
+
+export const paradiseValleyStub = buildStubRecord(
+  'Paradise Valley',
+  'https://www.paradisevalleyaz.gov/186/Community-Development',
+  '(480) 348-3690',
+  'Paradise Valley Town Code Chapter 11',
+);
+export const paradiseValley = buildStubModule('Paradise Valley');

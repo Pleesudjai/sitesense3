@@ -620,3 +620,49 @@ Each stub returns the same `ZoningResult` shape with confidence='unknown' and a 
 - Push 10 commits to GitHub.
 - Address → APN geocoder.
 - HTTP layer for the React frontend.
+
+---
+
+## 2026-05-11 — zoning_lookup: deep probe for full-data on remaining 12 cities → honest reality
+
+**What was attempted:** User asked "can we get full data for this?" referring to the 5 hint-only cities (Chandler, Goodyear, Avondale, Surprise, Peoria) and the 7 cities not yet in the agent (Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley). Spent a session deep-probing every public source.
+
+**Findings (per city, after exhaustive search):**
+
+| City | Available? | Probe result |
+|---|---|---|
+| Chandler | No | Has only a historical 241-feature ordinance overlay layer; CityLimits service has 1 feature with a tiny extent (broken). Web-map "Zoning Viewer" references only the ordinance overlay. |
+| Goodyear | No | maps.goodyearaz.gov has services but Planning/LandUsePlanning/DevelopmentServices all require auth tokens. NAI Horizon CRE firm has a "Goodyear Allowable Zoning" service but it's curated CRE subset with no setback/density fields. |
+| Avondale | No | Avondale_SF_Zoning + Avondale_MF_Zoning found in AGOL search — but spatial reference is wkid 102723 (Ohio State Plane). They're for Avondale, OHIO, not Avondale, AZ. avondale_gis AGOL account has annexations, planning boundaries, police data, but no zoning. |
+| Surprise | No | No public REST anywhere; gis.surpriseaz.gov DNS fails; no AGOL items from official accounts. |
+| Peoria | No | gis.peoriaaz.gov has Peoria_Zoning MapServer but its 19 layers are all specific-area-plan overlays and Subzones (PAD/PCD/PUD categories) — no base-zoning REST. |
+| Buckeye | No | maps.buckeyeaz.gov has rich Planning/LandUsePlanning/DevelopmentServices folders but they all return token-required. The one public layer (GeneralPlanLandUse) is General Plan land-use categories, not zoning. |
+| Apache Junction | No | No public REST. Direct host 000 (DNS fail). No AGOL items. |
+| El Mirage | No | No public REST. Direct host 000. No AGOL items. |
+| Tolleson | No | No public REST. Only finds an unrelated infra app. |
+| Fountain Hills | No | ToFH_2005_LandUse___Zoning service exists but layer 0 "ZONING_POLYGON_VER1" has only TEXTSTRING/TEXT_SIZE/TEXT_ANGLE fields — it's a label layer, not zoning. |
+| Litchfield Park | No | No public REST. No AGOL items. |
+| Paradise Valley | No | No public REST. Direct host 000. No AGOL items. |
+
+**Honest answer: no, we can't get full data for any of the 12.** The pattern is consistent — small Arizona cities don't publish current zoning as continuous polygon REST; only the bigger ones (Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale) and Maricopa County do. To get full data for any of these 12 would require:
+- Emailing each city's GIS contact to request a service URL or shapefile export, OR
+- Scraping the zoning code text (PDF) and a static zoning map PDF and georeferencing manually, OR
+- Paying for a commercial Maricopa-wide consolidated zoning dataset (Cotality / NAI / etc).
+
+None of those are an "MCP-tool-fetches-via-public-REST" path.
+
+**What was changed in this commit:**
+- Avondale: was being moved to a real module, then discovered the data was Ohio-Avondale (wkid 102723 = Ohio State Plane). Reverted to a stub. Saved 30 min of fabricated dimensional values that would have been wrong for a different state.
+- Added 7 new stubs to `stubs_west_valley.ts`: Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley. Each carries the city's planning portal URL and phone (best-effort from city websites — phones may be old, user verifies).
+- Dispatcher's `CITY_INDEX` now lists 18 city keys (was 11). `STUB_BY_HINT` lists 12 hint-only cities (was 5).
+- `MODULES` parallel-scan list still has all stubs as null-returning no-ops.
+- "Outside covered jurisdictions" fallback message rewritten to enumerate all 19 covered (7 real + 12 stub + County).
+
+**Coverage now:**
+- ✓ Real dimensional data (7): Tempe, Phoenix, Mesa, Scottsdale, Gilbert, Glendale, Maricopa County unincorporated
+- ⚠ Hint-only stubs (12): Chandler, Goodyear, Avondale, Surprise, Peoria, Buckeye, Apache Junction, El Mirage, Tolleson, Fountain Hills, Litchfield Park, Paradise Valley
+- ✗ Outside coverage: anything beyond Maricopa County
+
+19 of ~21 Maricopa jurisdictions now in the agent (the remaining ~2 are tiny: Carefree, Cave Creek, Queen Creek, Wickenburg, Youngtown, Guadalupe).
+
+**Recommendation for unlocking the remaining cities:** invest in commercial zoning data (Cotality, Regrid). That bypasses the per-city-REST hunt entirely.
