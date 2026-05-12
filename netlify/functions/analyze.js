@@ -178,11 +178,16 @@ const ZONE_DESCRIPTIONS = {
   AE: 'Special Flood Hazard Area (1% annual chance) — base flood elevation established',
   A:  'Special Flood Hazard Area (1% annual chance) — no BFE established',
   AO: 'Special Flood Hazard Area — shallow flooding, sheet flow',
+  AH: 'Special Flood Hazard Area — shallow ponding, BFE established',
   VE: 'Coastal High Hazard Area — wave action, BFE established',
-  X:  'Minimal flood risk (outside 500-year floodplain)',
-  B:  'Moderate flood risk (between 100- and 500-year floodplain)',
+  V:  'Coastal High Hazard Area — wave action, no BFE',
+  X:  'Minimal flood risk (outside the 0.2% annual-chance / 500-year floodplain)',
+  'X (shaded)': 'Moderate flood risk (between the 1% and 0.2% annual-chance floodplains)',
+  B:  'Moderate flood risk (between 100- and 500-year floodplain, older designation)',
+  C:  'Minimal flood risk (older designation)',
+  D:  'Possible but undetermined flood hazard',
 }
-const ZONE_RISK = { AE: 'HIGH', A: 'HIGH', AO: 'HIGH', VE: 'HIGH', X: 'LOW', B: 'MODERATE', C: 'LOW' }
+const ZONE_RISK = { AE: 'HIGH', A: 'HIGH', AO: 'HIGH', AH: 'HIGH', VE: 'HIGH', V: 'HIGH', X: 'LOW', 'X (shaded)': 'MODERATE', B: 'MODERATE', C: 'LOW', D: 'UNKNOWN' }
 
 async function getFloodZone(polygon) {
   const [cx, cy] = polygonCentroid(polygon.coordinates)
@@ -191,23 +196,31 @@ async function getFloodZone(polygon) {
     geometryType: 'esriGeometryPoint',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'FLD_ZONE,SFHA_TF,BFE_DFE',
+    // FEMA NFHL layer 28: STATIC_BFE is the canonical BFE field; -9999 = no BFE.
+    // (BFE_DFE doesn't exist on the current layer; querying it errors the whole call.)
+    outFields: 'FLD_ZONE,SFHA_TF,STATIC_BFE,ZONE_SUBTY',
     returnGeometry: 'false',
     f: 'json',
   })
   try {
-    const res = await fetch(`https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query?${params}`,
+    // FEMA migrated NFHL out of /gis/nfhl/ in 2025; the old URL now 404s. Use /arcgis/.
+    const res = await fetch(`https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query?${params}`,
       { signal: AbortSignal.timeout(12000) })
     const data = await res.json()
     const features = data.features || []
-    if (!features.length) return defaultFlood()
+    if (!features.length) {
+      // Point not in any mapped flood polygon → conventionally Zone X (minimal).
+      return defaultFlood()
+    }
     const a = features[0].attributes || {}
-    const zone = (a.FLD_ZONE || 'X').trim()
-    const bfe = parseFloat(a.BFE_DFE)
+    let zone = (a.FLD_ZONE || 'X').trim()
+    // FEMA encodes shaded X as FLD_ZONE='X' with ZONE_SUBTY containing '0.2 PCT'.
+    if (zone === 'X' && (a.ZONE_SUBTY || '').includes('0.2 PCT')) zone = 'X (shaded)'
+    const bfe = parseFloat(a.STATIC_BFE)
     return {
       zone, description: ZONE_DESCRIPTIONS[zone] || `Flood Zone ${zone}`,
       risk_level: ZONE_RISK[zone] || 'UNKNOWN',
-      bfe_ft: !isNaN(bfe) && bfe > 0 ? bfe : null,
+      bfe_ft: !isNaN(bfe) && bfe > 0 && bfe < 9999 ? bfe : null,
       sfha: a.SFHA_TF === 'T',
     }
   } catch (e) {
